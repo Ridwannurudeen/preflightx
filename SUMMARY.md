@@ -1,0 +1,1 @@
+PreflightX — pre-execution verification skill for autonomous DeFi agents on X Layer. Composes 8 OnchainOS endpoints with Uniswap AI in one call to validate route, slippage, token safety, and portfolio policy. Returns a signed VerifiedPlan or a structured list of failing reason codes. Built for OKX Build X Hackathon — Skill Arena.

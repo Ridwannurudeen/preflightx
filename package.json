@@ -1,0 +1,53 @@
+{
+  "name": "@preflightx/skill",
+  "version": "0.1.0",
+  "description": "Pre-execution verification skill for autonomous DeFi agents on X Layer. Composes OnchainOS DEX, market, and Onchain Gateway skills with Uniswap AI to validate routes, slippage, token safety, and portfolio policy before settlement.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "SKILL.md",
+    "README.md",
+    "plugin.yaml"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "demo": "tsx scripts/demo.ts",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "x-layer",
+    "okx",
+    "onchainos",
+    "uniswap",
+    "defi",
+    "agent",
+    "verification",
+    "preflight",
+    "x402"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.0",
+    "viem": "^2.21.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
