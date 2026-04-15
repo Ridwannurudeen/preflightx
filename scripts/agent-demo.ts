@@ -199,6 +199,24 @@ async function remediate(
           : `would issue approval of ${formatUsdc(needed)} USDC to ${spender.slice(0, 10)}… — onchainos CLI unavailable locally`,
       };
     }
+    case "PRICE_DEVIATION_EXCEEDED":
+      // Deviation is market-driven; single retry after a short delay lets candles refresh.
+      return { intent, limits, explanation: "short retry — candle window will advance and deviation should normalize" };
+    case "GAS_INSUFFICIENT": {
+      const halved = (BigInt(intent.amount) / 2n).toString();
+      return {
+        intent: { ...intent, amount: halved },
+        limits,
+        explanation: `gas budget too tight for size ${intent.amount} — halved to ${halved} to lower gas cost below cap`,
+      };
+    }
+    case "HOLDER_CONCENTRATION_TOO_HIGH":
+    case "TOKEN_TOO_NEW":
+    case "TOKEN_UNSAFE":
+    case "ROUTE_SIMULATION_FAILED":
+    case "CROSS_SOURCE_DIVERGENCE_TOO_HIGH":
+      // These are risk signals, not knob problems. Refusing the trade is the correct agent action.
+      return null;
     default:
       return null;
   }
@@ -291,7 +309,18 @@ async function main() {
 
     const fix = await remediate(reason, intent, limits, failingCheck?.details ?? {});
     if (!fix) {
-      agent(`reason ${reason} has no autonomous remediation — aborting.`);
+      const isRisk = [
+        "HOLDER_CONCENTRATION_TOO_HIGH",
+        "TOKEN_TOO_NEW",
+        "TOKEN_UNSAFE",
+        "ROUTE_SIMULATION_FAILED",
+        "CROSS_SOURCE_DIVERGENCE_TOO_HIGH",
+      ].includes(reason);
+      if (isRisk) {
+        agent(`${reason} is a risk signal, not a knob problem — refusing to trade. This is the correct policy outcome.`);
+      } else {
+        agent(`no autonomous remediation implemented for ${reason} — aborting.`);
+      }
       return;
     }
     agent(`remediation: ${fix.explanation}`);
