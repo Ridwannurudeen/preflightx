@@ -111,12 +111,30 @@ npm run build
 
 ## What is live today
 
+- **npm:** [`preflightx-skill`](https://www.npmjs.com/package/preflightx-skill)
 - live guard deployment on X Layer mainnet
 - live signer bound to the current guard
 - deterministic verifier returning the exact guard-ready plan struct
 - on-chain signature verification through `PreflightGuard.verifySignature`
 - OKX + Uniswap + X Layer composed verification flow
+- **agent-initiated on-chain swap** through OnchainOS after policy passes
 - approval artifact generation from the agent demo
+
+## Versus other agent-safety skills on X Layer
+
+This space has several entries in the OKX Build X Skill Arena. Here is where PreflightX differs along axes that matter for autonomous execution:
+
+| Capability | PreflightX | Advisory warning layers (Blockaid-style) | Safety-score oracles (Guardian-style) | Intent control (Mandate-style) |
+|---|---|---|---|---|
+| On-chain enforcement contract | Yes · [`PreflightGuard`](https://www.oklink.com/xlayer/address/0xe0fa387c81b02e7e877bb5313b3fa62d4e8af5eb) | No | No | Partial |
+| EIP-712 signed plan matching the exact guard struct | Yes | No | No | No |
+| Cross-source quote validation (OKX + Uniswap, >50 bps delta blocks) | Yes | Rarely | No | No |
+| Autonomous remediation loop (resize, widen, approve, halve) | Yes | No | No | Yes |
+| Published signer recoverable on-chain via `verifySignature` | Yes | No | No | No |
+| Real agent-initiated swap tx produced by the demo | [`0x9d74…7e7e`](https://www.oklink.com/xlayer/tx/0x9d746524c2079d0eaa7d8bc7240c6d2b6a74454cefb15e5b48d67bfebe3b7e7e) | — | — | — |
+| Deterministic numeric reason codes (no LLM) | 11 checks | partial | 4-6 | n/a |
+
+The short version: most competing skills **warn** or **score**. PreflightX produces a cryptographic receipt that the guard contract verifies on-chain, so "bypassing safety" means losing access to the only sanctioned execution path — not clicking through a modal.
 
 ## What this repo does not claim
 
@@ -200,7 +218,7 @@ On success, the response contains:
 ## Minimal usage
 
 ```ts
-import { Preflight, PlanSigner } from "@preflightx/skill";
+import { Preflight, PlanSigner } from "preflightx-skill";
 
 const preflight = new Preflight({
   onchainosApiKey: process.env.ONCHAINOS_API_KEY!,

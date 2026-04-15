@@ -1,5 +1,5 @@
 {
-  "name": "@preflightx/skill",
+  "name": "preflightx-skill",
   "version": "0.1.0",
   "description": "Pre-execution verification skill for autonomous DeFi agents on X Layer. Composes OnchainOS DEX, market, and Onchain Gateway skills with Uniswap AI to validate routes, slippage, token safety, and portfolio policy before settlement.",
   "type": "module",
