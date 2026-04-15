@@ -217,6 +217,35 @@ export class Preflight {
       maxBps: limits.maxSlippageBps,
     });
 
+    try {
+      const candles = await this.okx.getRecentCandles(intent.toToken, "15m", 4);
+      if (candles.length > 0) {
+        const { price: currentPrice } = await this.okx.getMarketPriceUsd(intent.toToken);
+        const closes = candles.map((c) => c.close).filter((n) => Number.isFinite(n) && n > 0);
+        if (closes.length > 0) {
+          const meanClose = closes.reduce((a, b) => a + b, 0) / closes.length;
+          const deviationBps = meanClose > 0
+            ? Math.abs((currentPrice - meanClose) / meanClose) * 10_000
+            : 0;
+          if (deviationBps > 1000) {
+            return fail(
+              "7b.price-deviation",
+              { meanClose, currentPrice, deviationBps, maxBps: 1000 },
+              "PRICE_DEVIATION_TOO_HIGH",
+            );
+          }
+          pass("7b.price-deviation", {
+            meanClose,
+            currentPrice,
+            deviationBps,
+            maxBps: 1000,
+          });
+        }
+      }
+    } catch {
+      // Candles may not be indexed for every X Layer token yet — non-fatal.
+    }
+
     const quoteAge = (Date.now() - okxQuote.quotedAt) / 1000;
     if (quoteAge > limits.maxStaleQuoteSeconds) {
       return fail(

@@ -26,9 +26,12 @@ PreflightX composes **8 distinct OnchainOS endpoints** + Uniswap AI + direct X L
 | 5 | OnchainOS Onchain Gateway `simulate-tx` | Tx doesn't revert |
 | 6 | OnchainOS Market `token-info` | Token verified, holder concentration ≤ limit |
 | 7 | (computed) | Quote slippage ≤ caller's `maxSlippageBps` |
+| 7b | OnchainOS Market `candles` + `price` | Current price within 1000 bps of recent candle mean |
 | 8 | (computed) | Quote age ≤ `maxStaleQuoteSeconds` |
 | 9 | OnchainOS Wallet `total-value` + `all-token-balances` | Trade size ≤ portfolio impact cap |
 | 10 | OnchainOS Onchain Gateway `gas-price` | Computes total estimated cost |
+
+**OnchainOS endpoints hit (8 distinct):** `dex/aggregator/quote`, `dex/aggregator/onchain-gateway/simulate-tx`, `dex/aggregator/onchain-gateway/gas-price`, `dex/market/token-info`, `dex/market/price`, `dex/market/candles`, `wallet/asset/total-value`, `wallet/asset/all-token-balances`. Endpoints match OnchainOS `llms.txt` as of Apr 14 2026; if OKX migrates paths to `v6`, the skill surface is unaffected — only the underlying client paths need updating.
 
 The pipeline **short-circuits on the first failure** and returns a single reason code. On full pass it returns a `VerifiedPlan` valid for 90 seconds, with a single-use nonce and an EIP-712 signature recoverable to the published signer.
 

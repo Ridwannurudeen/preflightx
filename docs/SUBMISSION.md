@@ -48,9 +48,12 @@ The on-chain `PreflightGuard` contract validates that signature, rejects expired
 - Onchain Gateway → `/api/v5/dex/aggregator/onchain-gateway/gas-price`
 - Market → `/api/v5/dex/market/token-info` (safety, decimals)
 - Market → `/api/v5/dex/market/price` (USD valuation for portfolio impact)
+- Market → `/api/v5/dex/market/candles` (recent-price deviation check against quote)
 - Wallet → `/api/v5/wallet/asset/total-value`
 - Wallet → `/api/v5/wallet/asset/all-token-balances`
 - HMAC SHA-256 signing on every request (OK-ACCESS-KEY/SIGN/TIMESTAMP/PASSPHRASE)
+
+Endpoints match the OnchainOS `llms.txt` catalog as of Apr 14 2026. If OKX migrates paths to `v6` or equivalent, only `src/onchainos.ts` needs updating — the public skill API is unaffected.
 
 **Uniswap AI Skills used:**
 - `uniswap-trading` quote API → independent route quote for cross-validation against OnchainOS DEX. When the two engines disagree by more than 50 bps the verifier blocks the trade — catches manipulated quotes a single-source verifier misses.

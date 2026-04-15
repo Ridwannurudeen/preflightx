@@ -26,7 +26,7 @@ Trigger phrases:
 
 Use PreflightX **before any swap, route execution, or asset move** an autonomous agent intends to perform on X Layer (chainId `196`).
 
-## What it does — the 10 internal steps
+## What it does — the 11 internal steps
 
 The verifier **short-circuits on the first failure** and returns a single reason code.
 
@@ -39,9 +39,12 @@ The verifier **short-circuits on the first failure** and returns a single reason
 | 5 | Transaction simulation | OnchainOS Onchain Gateway `simulate-tx` |
 | 6 | Token safety + holder concentration | OnchainOS Market `token-info` |
 | 7 | Slippage envelope | (computed) |
+| 7b | Price deviation vs recent candles (≤ 1000 bps) | OnchainOS Market `candles` + `price` |
 | 8 | Quote freshness | (computed) |
 | 9 | Portfolio policy | OnchainOS Wallet `total-value` + `all-token-balances` |
 | 10 | Gas pricing | OnchainOS Onchain Gateway `gas-price` |
+
+**OnchainOS endpoints hit (8 distinct):** `dex/aggregator/quote`, `dex/aggregator/onchain-gateway/simulate-tx`, `dex/aggregator/onchain-gateway/gas-price`, `dex/market/token-info`, `dex/market/price`, `dex/market/candles`, `wallet/asset/total-value`, `wallet/asset/all-token-balances`. Plus Uniswap AI quote + direct X Layer RPC `balanceOf` / `allowance`.
 
 On pass: produces an EIP-712 signed `VerifiedPlan` with a 90-second TTL and a single-use nonce.
 

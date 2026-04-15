@@ -130,6 +130,23 @@ export class OnchainosClient {
     return { price: Number(p.price), updatedAt: Number(p.timestamp ?? Date.now()) };
   }
 
+  async getRecentCandles(
+    tokenAddress: string,
+    bar: "1m" | "5m" | "15m" | "1H" = "15m",
+    limit = 4,
+  ): Promise<Array<{ open: number; close: number; ts: number }>> {
+    const { data } = await this.http.get("/api/v5/dex/market/candles", {
+      params: { chainId: X_LAYER_CHAIN_ID, tokenAddress, bar, limit },
+    });
+    const rows = data?.data ?? [];
+    return rows.map((r: { ts?: string; o?: string; c?: string } | string[]) => {
+      if (Array.isArray(r)) {
+        return { ts: Number(r[0]), open: Number(r[1]), close: Number(r[4]) };
+      }
+      return { ts: Number(r.ts), open: Number(r.o), close: Number(r.c) };
+    });
+  }
+
   async simulateTx(params: {
     from: string;
     to: string;

@@ -31,6 +31,7 @@ api_calls:
   - "https://web3.okx.com/api/v5/wallet/chain/balances"
   - "https://web3.okx.com/api/v5/dex/market/price"
   - "https://web3.okx.com/api/v5/dex/market/candles"
+  - "https://web3.okx.com/api/v5/dex/market/candles"
   - "https://web3.okx.com/api/v5/dex/aggregator/onchain-gateway/simulate-tx"
   - "https://web3.okx.com/api/v5/dex/aggregator/onchain-gateway/gas-price"
   - "https://web3.okx.com/api/v5/dex/aggregator/onchain-gateway/gas-limit"

@@ -92,6 +92,12 @@ function stubAllPasses(opts: { uniDiverges?: boolean } = {}) {
     price: 50,
     updatedAt: Date.now(),
   });
+  vi.spyOn(OnchainosClient.prototype, "getRecentCandles").mockResolvedValue([
+    { ts: Date.now() - 3 * 900_000, open: 49.5, close: 50.0 },
+    { ts: Date.now() - 2 * 900_000, open: 50.0, close: 50.2 },
+    { ts: Date.now() - 1 * 900_000, open: 50.2, close: 50.1 },
+    { ts: Date.now(), open: 50.1, close: 50.0 },
+  ]);
   vi.spyOn(OnchainosClient.prototype, "getPortfolio").mockResolvedValue({
     totalValueUsd: 100_000,
     balances: [],
@@ -204,6 +210,18 @@ describe("Preflight.check", () => {
   it("rejects malformed intents at parse time", async () => {
     const preflight = makePreflight();
     await expect(preflight.check({ action: "swap" })).rejects.toThrow();
+  });
+
+  it("fails on price deviation beyond 1000 bps from candle mean", async () => {
+    stubAllPasses();
+    vi.spyOn(OnchainosClient.prototype, "getMarketPriceUsd").mockResolvedValue({
+      price: 80, // 60% above mean candle close of 50
+      updatedAt: Date.now(),
+    });
+    const preflight = makePreflight();
+    const result = await preflight.check(VALID_INTENT, PASS_LIMITS);
+    expect(result.verdict).toBe("fail");
+    expect(result.failedReasonCodes).toEqual(["PRICE_DEVIATION_TOO_HIGH"]);
   });
 
   it("nonces are unique across plans", async () => {
