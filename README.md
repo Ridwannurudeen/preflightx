@@ -8,6 +8,8 @@ It stops unsafe swaps before execution, explains the failure in deterministic re
 
 - **Track:** OKX Build X - Skill Arena
 - **Live demo:** https://preflight.gudman.xyz
+- **Terminal demo recording:** https://asciinema.org/a/MlnxQZtRAilxfqgq — full agent rescue end to end
+- **npm:** [`preflightx-skill`](https://www.npmjs.com/package/preflightx-skill)
 - **Current guard (X Layer mainnet):** [`0xe0fa387c81b02e7e877bb5313b3fa62d4e8af5eb`](https://www.oklink.com/xlayer/address/0xe0fa387c81b02e7e877bb5313b3fa62d4e8af5eb)
 - **Current attestation signer:** [`0xeD964c21317fab45105Ac20C97a061DbBfBE8412`](https://www.oklink.com/xlayer/address/0xeD964c21317fab45105Ac20C97a061DbBfBE8412)
 - **Guard deploy tx:** [`0x5986429bf92a6e5760c9f49a021984b7a224cc5945716fe2daa347aa2f661e80`](https://www.oklink.com/xlayer/tx/0x5986429bf92a6e5760c9f49a021984b7a224cc5945716fe2daa347aa2f661e80)
