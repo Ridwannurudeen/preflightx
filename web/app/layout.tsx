@@ -17,7 +17,7 @@ const jetbrains = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "PreflightX — pre-execution verification for autonomous DeFi agents on X Layer",
   description:
-    "One call composes 8 OnchainOS endpoints + Uniswap AI + X Layer RPC. Signed VerifiedPlan or structured fail. PreflightGuard enforces the promise on-chain.",
+    "One call composes the OKX DEX v6 aggregator + market endpoints + Uniswap AI cross-check + direct X Layer RPC. Returns a signed, guard-ready plan or structured fail. PreflightGuard enforces signature, expiry, nonce, caller binding, and tamper detection on-chain.",
   openGraph: {
     title: "PreflightX — preflight before you trade. Enforce it on-chain.",
     description:

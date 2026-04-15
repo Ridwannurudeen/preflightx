@@ -122,7 +122,8 @@ If you configure `guardContractAddress` in the verifier, the allowance check tar
 
 - Do not commit the attestation private key.
 - Use a dedicated deployer key and a separate attestation signer in production.
-- Treat any previously published signer whose private key was exposed as compromised and redeploy the guard with a rotated signer.
+- The previously published signer `0xd0C14e287fF6E0B0EC6591BC14FE66CB06FAa0AA` had its private key exposed in early git history and has been **retired**. The previously published guard `0xccaeeb946a0511e0a1fd4497dd6f4e59294478eb`, which was bound to that signer in its immutable constructor, is also retired.
+- The **current** attestation signer is `0xeD964c21317fab45105Ac20C97a061DbBfBE8412`; the **current** guard is `0xe0fa387c81b02e7e877bb5313b3fa62d4e8af5eb` (X Layer mainnet, chainId 196).
 
 ## Scripts
 
