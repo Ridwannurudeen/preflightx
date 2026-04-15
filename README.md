@@ -1,22 +1,45 @@
 # PreflightX
 
-**Run preflight before you trade.**
+**On-chain enforced pre-execution verification for autonomous DeFi agents on X Layer.**
 
-PreflightX is a pre-execution verification skill for autonomous DeFi agents on X Layer. Built for the [OKX Build X Hackathon](https://web3.okx.com/xlayer/build-x-hackathon) — Skill Arena.
+Built for the [OKX Build X Hackathon](https://web3.okx.com/xlayer/build-x-hackathon) — Skill Arena.
 
-In one call, PreflightX composes:
+PreflightX is two things, used together:
 
-- **OnchainOS DEX** — route quote across X Layer liquidity sources
-- **OnchainOS Onchain Gateway** — transaction simulation, gas price
-- **OnchainOS Market** — token info, holder concentration, market price
-- **OnchainOS Wallet** — portfolio total value, token balances
-- **Uniswap AI** — independent route quote for cross-validation
+1. **`@preflightx/skill`** — a TypeScript skill any agent installs. Exposes one function `preflight.check(intent, limits)` that runs ten programmatic checks across OnchainOS, Uniswap AI, and X Layer RPC. On pass it returns a `VerifiedPlan` carrying a real EIP-712 signature.
+2. **`PreflightGuard`** — a Solidity contract on X Layer that only forwards a swap to the router if a fresh, unused, signed `VerifiedPlan` is presented. Bypassing PreflightX means losing the safety path.
 
-It returns either a **signed `VerifiedPlan`** ready to execute or a list of **failing reason codes**. Agents never send a doomed transaction.
+Live deployment:
+- Contract: [`0xccaeeb946a0511e0a1fd4497dd6f4e59294478eb`](https://www.oklink.com/xlayer/address/0xccaeeb946a0511e0a1fd4497dd6f4e59294478eb) (X Layer mainnet)
+- Attestation signer: `0xd0C14e287fF6E0B0EC6591BC14FE66CB06FAa0AA`
 
-## Why this exists
+## What's inside the single `preflight.check()` call
 
-Every autonomous agent that swaps on-chain is one bad route, stale quote, or rug token away from a costly mistake. Existing solutions are either single-source quoters (no cross-validation) or LLM-as-judge verifiers (subjective and dismissible). PreflightX is **objective, multi-source, and composable** — every check is a numeric assertion, every failure is a reason code, and the verified plan ships with a keccak256 signature.
+PreflightX composes **8 distinct OnchainOS endpoints** + Uniswap AI + direct X Layer RPC reads:
+
+| Step | Surface | Check |
+|---|---|---|
+| 1 | OnchainOS DEX `quote` + Uniswap AI quote | Dual-source route discovery |
+| 2 | (computed) | Cross-source divergence ≤ 50 bps |
+| 3 | viem RPC `balanceOf` | Caller has sufficient `fromToken` |
+| 4 | viem RPC `allowance` | Caller approved router for amount |
+| 5 | OnchainOS Onchain Gateway `simulate-tx` | Tx doesn't revert |
+| 6 | OnchainOS Market `token-info` | Token verified, holder concentration ≤ limit |
+| 7 | (computed) | Quote slippage ≤ caller's `maxSlippageBps` |
+| 8 | (computed) | Quote age ≤ `maxStaleQuoteSeconds` |
+| 9 | OnchainOS Wallet `total-value` + `all-token-balances` | Trade size ≤ portfolio impact cap |
+| 10 | OnchainOS Onchain Gateway `gas-price` | Computes total estimated cost |
+
+The pipeline **short-circuits on the first failure** and returns a single reason code. On full pass it returns a `VerifiedPlan` valid for 90 seconds, with a single-use nonce and an EIP-712 signature recoverable to the published signer.
+
+## Why this is different
+
+| Common pattern | PreflightX |
+|---|---|
+| Single-source quoter | Dual-source (OKX DEX + Uniswap AI) with divergence rejection |
+| LLM-as-judge | Pure programmatic checks, every fail is a reason code |
+| Hash called "signature" | Real EIP-712 signature, recoverable on-chain via `ecrecover` |
+| Off-chain promise | On-chain `PreflightGuard` enforces the promise; bypass = no swap |
 
 ## Install
 
@@ -24,36 +47,57 @@ Every autonomous agent that swaps on-chain is one bad route, stale quote, or rug
 npm install @preflightx/skill
 ```
 
-Set `ONCHAINOS_API_KEY` from the [OnchainOS Dev Portal](https://web3.okx.com/onchainos/dev-portal) and you're ready.
+## Configure
+
+```bash
+# OnchainOS API credentials (all three required for HMAC signing)
+ONCHAINOS_API_KEY=...
+ONCHAINOS_SECRET_KEY=...
+ONCHAINOS_PASSPHRASE=...
+
+# PreflightX attestation key — generate with `npm run gen-signer`
+PREFLIGHTX_SIGNER_PK=0x...
+PREFLIGHTX_SIGNER_ADDRESS=0x...
+```
+
+See `.env.example`.
 
 ## Use
 
 ```ts
-import { Preflight } from "@preflightx/skill";
+import { Preflight, PlanSigner } from "@preflightx/skill";
 
 const preflight = new Preflight({
   onchainosApiKey: process.env.ONCHAINOS_API_KEY!,
+  onchainosSecretKey: process.env.ONCHAINOS_SECRET_KEY!,
+  onchainosPassphrase: process.env.ONCHAINOS_PASSPHRASE!,
+  signerPrivateKey: process.env.PREFLIGHTX_SIGNER_PK as `0x${string}`,
 });
 
 const result = await preflight.check(intent, limits);
 
 if (result.verdict === "pass") {
-  // execute result.plan with confidence
+  // result.plan is signed, result.signature is EIP-712 recoverable to result.signer
+  const recovered = await PlanSigner.verify(
+    result.plan!,
+    limits.maxSlippageBps,
+    result.signature!,
+  );
+  console.log("Signer recovered:", recovered);
 } else {
   console.log("Blocked:", result.failedReasonCodes);
 }
 ```
 
-Full intent + limits schema in [`SKILL.md`](./SKILL.md).
+To execute on-chain through the guard:
 
-## How it scores against Skill Arena rubric
+```solidity
+PreflightGuard guard = PreflightGuard(0xccaeeb946a0511e0a1fd4497dd6f4e59294478eb);
+// Caller must approve(guard, plan.fromAmount) on plan.fromToken first
+guard.executeWithPreflight(plan, signature);
+```
 
-| Dimension | Weight | How PreflightX scores |
-|---|---|---|
-| OnchainOS / Uniswap Integration & Innovation | 25% | 8 distinct OnchainOS endpoints + Uniswap AI in one call. Cross-source divergence detection is a non-obvious composition. |
-| X Layer Ecosystem Fit & On-Chain Activity | 25% | Every check uses live X Layer data. Verified plans are designed for X Layer execution paths. |
-| AI Interaction & Novelty | 25% | Replaces LLM-as-judge with objective programmatic checks. Single-call verifier composes a pipeline that would take a human agent ~10 sequential RPC calls. |
-| Product Completeness & Commercial Potential | 25% | Standalone npm package. Reusable across any X Layer DeFi agent. Ships with full type-safe API and signed-plan output for downstream contract enforcement. |
+The guard reverts on `InvalidSigner`, `PlanExpired`, `NonceUsed`, `CallerMismatch`, `RouterCallFailed`, or `AmountOutBelowMin`.
 
 ## Architecture
 
@@ -61,44 +105,75 @@ Full intent + limits schema in [`SKILL.md`](./SKILL.md).
 intent + limits
       │
       ▼
-┌─────────────────────────────────────────────────────┐
-│              Preflight.check()                       │
-├─────────────────────────────────────────────────────┤
-│ 1. OKX DEX quote          + Uniswap AI quote        │
-│ 2. Cross-source divergence check                    │
-│ 3. OKX Onchain Gateway    simulate-tx               │
-│ 4. OKX Market             token-info (safety)       │
-│ 5. Slippage envelope                                │
-│ 6. Quote freshness                                  │
-│ 7. OKX Wallet             portfolio + balances      │
-│ 8. OKX Onchain Gateway    gas-price                 │
-│ 9. Sign canonical plan    keccak256                 │
-└─────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────┐
+│                Preflight.check()                           │
+├───────────────────────────────────────────────────────────┤
+│ 1.  OKX DEX quote     +  Uniswap AI quote (parallel)      │
+│ 2.  Cross-source divergence check                         │
+│ 3.  ERC-20 balanceOf via X Layer RPC                      │
+│ 4.  ERC-20 allowance via X Layer RPC                      │
+│ 5.  OKX Onchain Gateway simulate-tx                       │
+│ 6.  OKX Market token-info (safety, concentration)         │
+│ 7.  Slippage envelope                                     │
+│ 8.  Quote freshness                                       │
+│ 9.  OKX Wallet portfolio + balances                       │
+│ 10. OKX Onchain Gateway gas-price                         │
+│ 11. EIP-712 sign canonical plan                           │
+└───────────────────────────────────────────────────────────┘
       │
       ▼
-{ verdict, plan?, signature?, checks[], failedReasonCodes[] }
+{ verdict, plan, signature, signer, checks[], failedReasonCodes[] }
+      │
+      ▼   (optional: enforce on-chain)
+┌───────────────────────────────────────────────────────────┐
+│           PreflightGuard.executeWithPreflight()           │
+├───────────────────────────────────────────────────────────┤
+│ 1. Verify EIP-712 signature recovers to PreflightX signer │
+│ 2. Reject if expired                                      │
+│ 3. Reject if nonce already used                           │
+│ 4. Reject if caller != plan.caller                        │
+│ 5. Pull funds, approve router, forward call               │
+│ 6. Verify amountOut >= minToAmount                        │
+│ 7. Emit PreflightExecuted                                 │
+└───────────────────────────────────────────────────────────┘
 ```
 
 ## Project layout
 
 ```
 preflightx/
-├── plugin.yaml          # OKX plugin store manifest
-├── SKILL.md             # Skill description (markdown)
-├── SKILL_SUMMARY.md     # Short skill summary
-├── SUMMARY.md           # One-paragraph summary
+├── plugin.yaml              # OKX plugin store manifest
+├── SKILL.md                 # Skill description
 ├── package.json
 ├── tsconfig.json
+├── contracts/
+│   ├── PreflightGuard.sol   # On-chain enforcement contract
+│   └── out/                 # Compiled artifacts
 ├── src/
-│   ├── index.ts         # Public API
-│   ├── verifier.ts      # 9-step composition
-│   ├── onchainos.ts     # OnchainOS client
-│   ├── uniswap.ts       # Uniswap AI client
-│   └── types.ts         # Zod schemas + types
+│   ├── index.ts             # Public API
+│   ├── verifier.ts          # 10-step composition (short-circuiting)
+│   ├── signer.ts            # EIP-712 PlanSigner
+│   ├── chain.ts             # X Layer RPC client + ERC-20 helpers
+│   ├── onchainos.ts         # OnchainOS HMAC-signed client
+│   ├── uniswap.ts           # Uniswap AI cross-validation
+│   └── types.ts             # Zod schemas + EIP-712 types
 ├── test/
-│   └── verifier.test.ts
+│   └── verifier.test.ts     # 8 tests, signature roundtrip + short-circuit
 └── scripts/
-    └── demo.ts          # Runnable demo
+    ├── gen-signer.ts        # Generate attestation keypair
+    ├── compile.ts           # Compile PreflightGuard.sol
+    ├── deploy.ts            # Deploy to X Layer
+    └── demo.ts              # Run a real verification
+```
+
+## Scripts
+
+```bash
+npm run gen-signer    # generate a fresh PreflightX attestation key
+npm run compile       # compile PreflightGuard.sol
+npm run deploy        # deploy PreflightGuard to X Layer (deployer must be funded)
+npm test              # run vitest suite (8 tests)
+npm run demo          # run a real preflight against live X Layer + OnchainOS
 ```
 
 ## License

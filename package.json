@@ -22,6 +22,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "demo": "tsx scripts/demo.ts",
+    "gen-signer": "tsx scripts/gen-signer.ts",
+    "compile": "tsx scripts/compile.ts",
+    "deploy": "tsx scripts/deploy.ts",
     "lint": "tsc --noEmit"
   },
   "keywords": [
@@ -43,6 +46,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
+    "solc": "^0.8.34",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"

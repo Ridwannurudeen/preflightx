@@ -2,13 +2,23 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { Preflight } from "../src/verifier.js";
 import { OnchainosClient } from "../src/onchainos.js";
 import { UniswapAIClient } from "../src/uniswap.js";
+import { PlanSigner } from "../src/signer.js";
+import * as chain from "../src/chain.js";
+
+const SIGNER_PK = "0xREDACTED_ROTATED_SIGNER_KEY_REMOVED_FROM_HISTORY" as const;
+const SIGNER_ADDR = "0xd0C14e287fF6E0B0EC6591BC14FE66CB06FAa0AA" as const;
+
+const CALLER = "0x917a630f4bd294b68C3ABfD1DD61bff6F6F2d44E" as const;
+const FROM_TOKEN = "0x74b7F16337b8972027F6196A17a631aC6dE26d22" as const;
+const TO_TOKEN = "0xe538905cf8410324e03A5A23C1c177a474D59b2b" as const;
+const ROUTER = "0x000000000022D473030F116dDEE9F6B43aC78BA3" as const;
 
 const VALID_INTENT = {
   action: "swap" as const,
-  fromToken: "0x74b7F16337b8972027F6196A17a631aC6dE26d22",
-  toToken: "0xe538905cf8410324e03A5A23C1c177a474D59b2b",
+  fromToken: FROM_TOKEN,
+  toToken: TO_TOKEN,
   amount: "1000000",
-  caller: "0x917a630f4bd294b68C3ABfD1DD61bff6F6F2d44E",
+  caller: CALLER,
 };
 
 const PASS_LIMITS = {
@@ -19,12 +29,21 @@ const PASS_LIMITS = {
   maxStaleQuoteSeconds: 120,
 };
 
-function stubOkxQuote(toAmount = "990000000000000000") {
+function makePreflight() {
+  return new Preflight({
+    onchainosApiKey: "test-key",
+    onchainosSecretKey: "test-secret",
+    onchainosPassphrase: "test-pass",
+    signerPrivateKey: SIGNER_PK,
+  });
+}
+
+function stubOkxQuote(toAmount = "990000000000000000", slippageBps = 50) {
   return {
     fromAmount: "1000000",
     toAmount,
-    estimatedSlippageBps: 50,
-    routerAddress: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    estimatedSlippageBps: slippageBps,
+    routerAddress: ROUTER,
     callData: "0xabcdef",
     value: "0",
     liquiditySources: ["UniswapV3", "OkxDex"],
@@ -32,9 +51,15 @@ function stubOkxQuote(toAmount = "990000000000000000") {
   };
 }
 
-function stubTokenInfo(overrides: Partial<{ topHolderConcentrationPct: number; createdAt: number; verified: boolean }> = {}) {
+function stubTokenInfo(
+  overrides: Partial<{
+    topHolderConcentrationPct: number;
+    createdAt: number;
+    verified: boolean;
+  }> = {},
+) {
   return {
-    address: VALID_INTENT.toToken,
+    address: TO_TOKEN,
     symbol: "OKB",
     decimals: 18,
     createdAt: Math.floor(Date.now() / 1000) - 365 * 86400,
@@ -44,81 +69,123 @@ function stubTokenInfo(overrides: Partial<{ topHolderConcentrationPct: number; c
   };
 }
 
+function stubAllPasses(opts: { uniDiverges?: boolean } = {}) {
+  vi.spyOn(OnchainosClient.prototype, "getQuote").mockResolvedValue(stubOkxQuote());
+  vi.spyOn(UniswapAIClient.prototype, "getRoute").mockResolvedValue({
+    source: "uniswap",
+    fromAmount: "1000000",
+    toAmount: opts.uniDiverges ? "500000000000000000" : "991000000000000000",
+    estimatedSlippageBps: 45,
+    routerAddress: "0xRouter",
+    callData: "0xab",
+    value: "0",
+    protocolVersion: "v3",
+  });
+  vi.spyOn(chain, "getErc20Balance").mockResolvedValue(BigInt("10000000"));
+  vi.spyOn(chain, "getErc20Allowance").mockResolvedValue(BigInt("10000000"));
+  vi.spyOn(OnchainosClient.prototype, "simulateTx").mockResolvedValue({
+    success: true,
+    gasUsed: "150000",
+  });
+  vi.spyOn(OnchainosClient.prototype, "getTokenInfo").mockResolvedValue(stubTokenInfo());
+  vi.spyOn(OnchainosClient.prototype, "getMarketPriceUsd").mockResolvedValue({
+    price: 50,
+    updatedAt: Date.now(),
+  });
+  vi.spyOn(OnchainosClient.prototype, "getPortfolio").mockResolvedValue({
+    totalValueUsd: 100_000,
+    balances: [],
+  });
+  vi.spyOn(OnchainosClient.prototype, "getGasPriceWei").mockResolvedValue("1000000000");
+}
+
 beforeEach(() => {
   vi.restoreAllMocks();
 });
 
 describe("Preflight.check", () => {
-  it("passes when every step succeeds", async () => {
-    vi.spyOn(OnchainosClient.prototype, "getQuote").mockResolvedValue(stubOkxQuote());
-    vi.spyOn(UniswapAIClient.prototype, "getRoute").mockResolvedValue({
-      source: "uniswap",
-      fromAmount: "1000000",
-      toAmount: "991000000000000000",
-      estimatedSlippageBps: 45,
-      routerAddress: "0xRouter",
-      callData: "0xab",
-      value: "0",
-      protocolVersion: "v3",
-    });
-    vi.spyOn(OnchainosClient.prototype, "simulateTx").mockResolvedValue({
-      success: true,
-      gasUsed: "150000",
-    });
-    vi.spyOn(OnchainosClient.prototype, "getTokenInfo").mockResolvedValue(stubTokenInfo());
-    vi.spyOn(OnchainosClient.prototype, "getMarketPriceUsd").mockResolvedValue({
-      price: 50,
-      updatedAt: Date.now(),
-    });
-    vi.spyOn(OnchainosClient.prototype, "getPortfolio").mockResolvedValue({
-      totalValueUsd: 100_000,
-      balances: [],
-    });
-    vi.spyOn(OnchainosClient.prototype, "getGasPriceWei").mockResolvedValue("1000000000");
-
-    const preflight = new Preflight({ onchainosApiKey: "test-key", onchainosSecretKey: "test-secret", onchainosPassphrase: "test-pass" });
+  it("passes and returns a real EIP-712 signature recoverable to the signer", async () => {
+    stubAllPasses();
+    const preflight = makePreflight();
     const result = await preflight.check(VALID_INTENT, PASS_LIMITS);
 
     expect(result.verdict).toBe("pass");
     expect(result.plan).toBeDefined();
-    expect(result.signature).toMatch(/^0x[0-9a-f]{64}$/);
-    expect(result.failedReasonCodes).toEqual([]);
-  });
+    expect(result.signature).toMatch(/^0x[0-9a-f]{130}$/);
+    expect(result.signer).toBe(SIGNER_ADDR);
 
-  it("fails on slippage when over limit", async () => {
-    vi.spyOn(OnchainosClient.prototype, "getQuote").mockResolvedValue(
-      stubOkxQuote("990000000000000000"),
+    const recovered = await PlanSigner.verify(
+      result.plan!,
+      PASS_LIMITS.maxSlippageBps,
+      result.signature!,
     );
-    const okxQuote = stubOkxQuote();
-    okxQuote.estimatedSlippageBps = 500;
-    vi.spyOn(OnchainosClient.prototype, "getQuote").mockResolvedValue(okxQuote);
-    vi.spyOn(UniswapAIClient.prototype, "getRoute").mockRejectedValue(new Error("no route"));
-    vi.spyOn(OnchainosClient.prototype, "simulateTx").mockResolvedValue({
-      success: true,
-      gasUsed: "150000",
-    });
-    vi.spyOn(OnchainosClient.prototype, "getTokenInfo").mockResolvedValue(stubTokenInfo());
-    vi.spyOn(OnchainosClient.prototype, "getMarketPriceUsd").mockResolvedValue({
-      price: 50,
-      updatedAt: Date.now(),
-    });
-    vi.spyOn(OnchainosClient.prototype, "getPortfolio").mockResolvedValue({
-      totalValueUsd: 100_000,
-      balances: [],
-    });
-    vi.spyOn(OnchainosClient.prototype, "getGasPriceWei").mockResolvedValue("1000000000");
-
-    const preflight = new Preflight({ onchainosApiKey: "test-key", onchainosSecretKey: "test-secret", onchainosPassphrase: "test-pass" });
-    const result = await preflight.check(VALID_INTENT, { ...PASS_LIMITS, maxSlippageBps: 100 });
-
-    expect(result.verdict).toBe("fail");
-    expect(result.failedReasonCodes).toContain("SLIPPAGE_EXCEEDED");
-    expect(result.plan).toBeUndefined();
+    expect(recovered.toLowerCase()).toBe(SIGNER_ADDR.toLowerCase());
   });
 
-  it("fails on holder concentration when over limit", async () => {
+  it("verification fails for a tampered plan", async () => {
+    stubAllPasses();
+    const preflight = makePreflight();
+    const result = await preflight.check(VALID_INTENT, PASS_LIMITS);
+    expect(result.verdict).toBe("pass");
+
+    const tampered = {
+      ...result.plan!,
+      route: { ...result.plan!.route, toAmount: "1" },
+    };
+    const recovered = await PlanSigner.verify(
+      tampered,
+      PASS_LIMITS.maxSlippageBps,
+      result.signature!,
+    );
+    expect(recovered.toLowerCase()).not.toBe(SIGNER_ADDR.toLowerCase());
+  });
+
+  it("short-circuits on insufficient balance and runs no later checks", async () => {
     vi.spyOn(OnchainosClient.prototype, "getQuote").mockResolvedValue(stubOkxQuote());
     vi.spyOn(UniswapAIClient.prototype, "getRoute").mockRejectedValue(new Error("no route"));
+    vi.spyOn(chain, "getErc20Balance").mockResolvedValue(BigInt("100"));
+    const allowanceSpy = vi.spyOn(chain, "getErc20Allowance");
+    const simSpy = vi.spyOn(OnchainosClient.prototype, "simulateTx");
+
+    const preflight = makePreflight();
+    const result = await preflight.check(VALID_INTENT, PASS_LIMITS);
+
+    expect(result.verdict).toBe("fail");
+    expect(result.failedReasonCodes).toEqual(["INSUFFICIENT_BALANCE"]);
+    expect(result.plan).toBeUndefined();
+    expect(result.signature).toBeUndefined();
+    expect(allowanceSpy).not.toHaveBeenCalled();
+    expect(simSpy).not.toHaveBeenCalled();
+  });
+
+  it("short-circuits on insufficient allowance", async () => {
+    vi.spyOn(OnchainosClient.prototype, "getQuote").mockResolvedValue(stubOkxQuote());
+    vi.spyOn(UniswapAIClient.prototype, "getRoute").mockRejectedValue(new Error("no route"));
+    vi.spyOn(chain, "getErc20Balance").mockResolvedValue(BigInt("10000000"));
+    vi.spyOn(chain, "getErc20Allowance").mockResolvedValue(BigInt("0"));
+    const simSpy = vi.spyOn(OnchainosClient.prototype, "simulateTx");
+
+    const preflight = makePreflight();
+    const result = await preflight.check(VALID_INTENT, PASS_LIMITS);
+
+    expect(result.verdict).toBe("fail");
+    expect(result.failedReasonCodes).toEqual(["INSUFFICIENT_ALLOWANCE"]);
+    expect(simSpy).not.toHaveBeenCalled();
+  });
+
+  it("fails on cross-source divergence", async () => {
+    stubAllPasses({ uniDiverges: true });
+    const preflight = makePreflight();
+    const result = await preflight.check(VALID_INTENT, PASS_LIMITS);
+    expect(result.verdict).toBe("fail");
+    expect(result.failedReasonCodes).toEqual(["CROSS_SOURCE_DIVERGENCE"]);
+  });
+
+  it("fails on holder concentration", async () => {
+    vi.spyOn(OnchainosClient.prototype, "getQuote").mockResolvedValue(stubOkxQuote());
+    vi.spyOn(UniswapAIClient.prototype, "getRoute").mockRejectedValue(new Error("no route"));
+    vi.spyOn(chain, "getErc20Balance").mockResolvedValue(BigInt("10000000"));
+    vi.spyOn(chain, "getErc20Allowance").mockResolvedValue(BigInt("10000000"));
     vi.spyOn(OnchainosClient.prototype, "simulateTx").mockResolvedValue({
       success: true,
       gasUsed: "150000",
@@ -126,25 +193,24 @@ describe("Preflight.check", () => {
     vi.spyOn(OnchainosClient.prototype, "getTokenInfo").mockResolvedValue(
       stubTokenInfo({ topHolderConcentrationPct: 95 }),
     );
-    vi.spyOn(OnchainosClient.prototype, "getMarketPriceUsd").mockResolvedValue({
-      price: 50,
-      updatedAt: Date.now(),
-    });
-    vi.spyOn(OnchainosClient.prototype, "getPortfolio").mockResolvedValue({
-      totalValueUsd: 100_000,
-      balances: [],
-    });
-    vi.spyOn(OnchainosClient.prototype, "getGasPriceWei").mockResolvedValue("1000000000");
 
-    const preflight = new Preflight({ onchainosApiKey: "test-key", onchainosSecretKey: "test-secret", onchainosPassphrase: "test-pass" });
+    const preflight = makePreflight();
     const result = await preflight.check(VALID_INTENT, PASS_LIMITS);
 
     expect(result.verdict).toBe("fail");
-    expect(result.failedReasonCodes).toContain("HOLDER_CONCENTRATION_TOO_HIGH");
+    expect(result.failedReasonCodes).toEqual(["HOLDER_CONCENTRATION_TOO_HIGH"]);
   });
 
   it("rejects malformed intents at parse time", async () => {
-    const preflight = new Preflight({ onchainosApiKey: "test-key", onchainosSecretKey: "test-secret", onchainosPassphrase: "test-pass" });
+    const preflight = makePreflight();
     await expect(preflight.check({ action: "swap" })).rejects.toThrow();
+  });
+
+  it("nonces are unique across plans", async () => {
+    stubAllPasses();
+    const preflight = makePreflight();
+    const r1 = await preflight.check(VALID_INTENT, PASS_LIMITS);
+    const r2 = await preflight.check(VALID_INTENT, PASS_LIMITS);
+    expect(r1.plan!.nonce).not.toBe(r2.plan!.nonce);
   });
 });
