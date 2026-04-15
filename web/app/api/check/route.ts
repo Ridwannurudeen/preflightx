@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { intent, limits, presetLabel } = body ?? {};
+    const { intent, limits, presetLabel, mode } = body ?? {};
+    const directMode = mode === "direct";
     if (!intent || !limits) {
       return NextResponse.json({ error: "missing intent or limits" }, { status: 400 });
     }
@@ -18,6 +19,12 @@ export async function POST(req: Request) {
     const passphrase = process.env.ONCHAINOS_PASSPHRASE;
     const signerPk = process.env.PREFLIGHTX_SIGNER_PK as `0x${string}` | undefined;
     const guardContractAddress = process.env.PREFLIGHTGUARD_ADDRESS as `0x${string}` | undefined;
+    const uniswapApiKey = process.env.UNISWAP_API_KEY;
+    const uniswapUniversalRouterVersion = process.env.UNISWAP_UNIVERSAL_ROUTER_VERSION as
+      | "1.2"
+      | "2.0"
+      | "2.1.1"
+      | undefined;
 
     if (!apiKey || !secretKey || !passphrase || !signerPk) {
       return NextResponse.json(
@@ -31,7 +38,9 @@ export async function POST(req: Request) {
       onchainosSecretKey: secretKey,
       onchainosPassphrase: passphrase,
       signerPrivateKey: signerPk,
-      ...(guardContractAddress && { guardContractAddress }),
+      ...(uniswapApiKey && { uniswapApiKey }),
+      ...(uniswapUniversalRouterVersion && { uniswapUniversalRouterVersion }),
+      ...(guardContractAddress && !directMode && { guardContractAddress }),
     });
 
     const result = await preflight.check(intent, limits);
