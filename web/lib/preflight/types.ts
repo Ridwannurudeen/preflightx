@@ -23,6 +23,7 @@ export const RiskLimitsSchema = z.object({
   minTokenAgeSeconds: z.number().int().nonnegative().default(0),
   maxPortfolioImpactPct: z.number().min(0).max(100).default(25),
   maxStaleQuoteSeconds: z.number().int().positive().default(60),
+  maxGasCostWei: z.string().regex(/^\d+$/).optional(),
 });
 
 export type RiskLimits = z.infer<typeof RiskLimitsSchema>;
@@ -52,28 +53,40 @@ export interface CheckResult {
 }
 
 export interface VerifiedPlan {
-  intent: Intent;
-  route: {
-    source: "okx-dex" | "uniswap";
-    fromAmount: string;
-    toAmount: string;
-    estimatedSlippageBps: number;
-    routerAddress: string;
-    callData: string;
-    value: string;
-  };
-  gas: {
-    gasPriceWei: string;
-    gasLimit: string;
-    estimatedCostWei: string;
-  };
+  caller: `0x${string}`;
+  fromToken: `0x${string}`;
+  toToken: `0x${string}`;
+  fromAmount: string;
+  minToAmount: string;
+  router: `0x${string}`;
+  callData: `0x${string}`;
+  value: string;
   expiresAt: number;
-  nonce: string;
+  nonce: `0x${string}`;
+}
+
+export interface QuoteSummary {
+  source: "okx-dex";
+  expectedToAmount: string;
+  estimatedSlippageBps: number;
+  liquiditySources: string[];
+  approvalTarget: `0x${string}`;
+  gasPriceWei: string;
+  gasLimit: string;
+  estimatedCostWei: string;
+  quotedAt: number;
+  priceUpdatedAt?: number;
+  tokenSymbol: string;
+  tokenTags: string[];
+  riskControlLevel?: number;
+  top10HoldPercent?: number;
+  tokenAgeSeconds?: number;
 }
 
 export interface VerifyResponse {
   verdict: "pass" | "fail";
   plan?: VerifiedPlan;
+  quote?: QuoteSummary;
   checks: CheckResult[];
   failedReasonCodes: ReasonCodeKey[];
   signature?: `0x${string}`;
@@ -125,19 +138,23 @@ export interface EIP712Plan {
   nonce: `0x${string}`;
 }
 
-export function planToEip712(plan: VerifiedPlan, slippageBps: number): EIP712Plan {
-  const expectedOut = BigInt(plan.route.toAmount);
+export function deriveMinToAmount(toAmount: string, slippageBps: number): string {
+  const expectedOut = BigInt(toAmount);
   const minOut = expectedOut - (expectedOut * BigInt(slippageBps)) / 10_000n;
+  return minOut.toString();
+}
+
+export function planToEip712(plan: VerifiedPlan): EIP712Plan {
   return {
-    caller: plan.intent.caller as `0x${string}`,
-    fromToken: plan.intent.fromToken as `0x${string}`,
-    toToken: plan.intent.toToken as `0x${string}`,
-    fromAmount: BigInt(plan.intent.amount),
-    minToAmount: minOut,
-    router: plan.route.routerAddress as `0x${string}`,
-    callData: plan.route.callData as `0x${string}`,
-    value: BigInt(plan.route.value || "0"),
-    expiresAt: BigInt(Math.floor(plan.expiresAt / 1000)),
-    nonce: plan.nonce as `0x${string}`,
+    caller: plan.caller,
+    fromToken: plan.fromToken,
+    toToken: plan.toToken,
+    fromAmount: BigInt(plan.fromAmount),
+    minToAmount: BigInt(plan.minToAmount),
+    router: plan.router,
+    callData: plan.callData,
+    value: BigInt(plan.value || "0"),
+    expiresAt: BigInt(plan.expiresAt),
+    nonce: plan.nonce,
   };
 }

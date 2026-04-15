@@ -16,14 +16,17 @@ const xLayer = defineChain({
   },
 });
 
-const GUARD = (process.env.PREFLIGHTGUARD_ADDRESS ||
-  "0xccaeeb946a0511e0a1fd4497dd6f4e59294478eb") as `0x${string}`;
+const GUARD = process.env.PREFLIGHTGUARD_ADDRESS as `0x${string}` | undefined;
 
 const EXECUTED_EVENT = parseAbiItem(
   "event PreflightExecuted(address indexed caller, address indexed router, bytes32 indexed nonce, address fromToken, address toToken, uint256 fromAmount, uint256 minToAmount, uint256 amountOut)",
 );
 
 export async function GET() {
+  if (!GUARD) {
+    return NextResponse.json({ guard: null, count: 0, events: [], error: "PREFLIGHTGUARD_ADDRESS not configured" }, { status: 200 });
+  }
+
   try {
     const client = createPublicClient({ chain: xLayer, transport: http() });
     const current = await client.getBlockNumber();
@@ -58,9 +61,6 @@ export async function GET() {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { guard: GUARD, error: message, count: 0, events: [] },
-      { status: 200 },
-    );
+    return NextResponse.json({ guard: GUARD, error: message, count: 0, events: [] }, { status: 200 });
   }
 }

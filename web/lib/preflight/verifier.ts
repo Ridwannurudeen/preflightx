@@ -1,22 +1,30 @@
 import { type PublicClient } from "viem";
-import { OnchainosClient, type SwapResult } from "./onchainos";
+import { OnchainosClient, type SwapResult, type TokenAdvancedInfo } from "./onchainos";
 import { UniswapAIClient, type UniswapRouteResult } from "./uniswap";
 import { PlanSigner, planNonce } from "./signer";
 import { createChainClient, getErc20Balance, getErc20Allowance } from "./chain";
 import {
   IntentSchema,
   RiskLimitsSchema,
+  deriveMinToAmount,
   type CheckResult,
   type PreflightConfig,
+  type QuoteSummary,
   type ReasonCodeKey,
   type VerifiedPlan,
   type VerifyResponse,
   X_LAYER_CHAIN_ID,
 } from "./types";
 
-const PLAN_TTL_MS = 90_000;
+const PLAN_TTL_SECONDS = 90;
 const CROSS_SOURCE_TOLERANCE_BPS = 50;
 const MAX_PRICE_DEVIATION_BPS = 1000;
+const ADDRESS_RE = /^0x[a-fA-F0-9]{40}$/;
+const HEX_RE = /^0x([a-fA-F0-9]{2})+$/;
+
+function toDisplayUnits(amount: bigint, decimals: number): number {
+  return Number(amount) / 10 ** decimals;
+}
 
 export class Preflight {
   private readonly okx: OnchainosClient;
@@ -62,30 +70,28 @@ export class Preflight {
       checks.push({ step, pass: true, details });
     };
 
-    let swap: SwapResult;
-    try {
-      swap = await this.okx.getSwap({
+    const [swapResult, uniResult] = await Promise.allSettled([
+      this.okx.getSwap({
         fromToken: intent.fromToken,
         toToken: intent.toToken,
         amount: intent.amount,
         userWalletAddress: intent.caller,
-        slippagePercent: Math.max(limits.maxSlippageBps / 100, 0.1),
-      });
-    } catch (e) {
-      return fail("1.route-discovery", { error: String(e) }, "ROUTE_NOT_FOUND");
-    }
-
-    let uniQuote: UniswapRouteResult | undefined;
-    try {
-      uniQuote = await this.uni.getRoute({
+        slippagePercent: limits.maxSlippageBps / 100,
+      }),
+      this.uni.getRoute({
         chainId: X_LAYER_CHAIN_ID,
         fromToken: intent.fromToken,
         toToken: intent.toToken,
         amount: intent.amount,
-      });
-    } catch {
-      // Uniswap may lack liquidity on X Layer for the pair — non-fatal.
+      }),
+    ]);
+
+    if (swapResult.status === "rejected") {
+      return fail("1.route-discovery", { error: String(swapResult.reason) }, "ROUTE_NOT_FOUND");
     }
+
+    const swap = swapResult.value;
+    const uniQuote = uniResult.status === "fulfilled" ? uniResult.value : undefined;
     pass("1.route-discovery", {
       okxToAmount: swap.toAmount,
       uniToAmount: uniQuote?.toAmount ?? null,
@@ -135,13 +141,14 @@ export class Preflight {
       required: fromAmount.toString(),
     });
 
+    const approvalTarget = (this.cfg.guardContractAddress ?? swap.routerAddress) as `0x${string}`;
     let allowance: bigint;
     try {
       allowance = await getErc20Allowance(
         this.chain,
         intent.fromToken as `0x${string}`,
         intent.caller as `0x${string}`,
-        swap.routerAddress as `0x${string}`,
+        approvalTarget,
       );
     } catch (e) {
       return fail("4.allowance-check", { error: String(e) }, "INSUFFICIENT_ALLOWANCE");
@@ -152,7 +159,7 @@ export class Preflight {
         {
           allowance: allowance.toString(),
           required: fromAmount.toString(),
-          spender: swap.routerAddress,
+          spender: approvalTarget,
         },
         "INSUFFICIENT_ALLOWANCE",
       );
@@ -160,19 +167,42 @@ export class Preflight {
     pass("4.allowance-check", {
       allowance: allowance.toString(),
       required: fromAmount.toString(),
-      spender: swap.routerAddress,
+      spender: approvalTarget,
     });
 
+    if (!ADDRESS_RE.test(swap.routerAddress) || !HEX_RE.test(swap.callData) || swap.gasLimit === "0") {
+      return fail(
+        "5.route-simulation",
+        {
+          router: swap.routerAddress,
+          callData: swap.callData,
+          gasLimit: swap.gasLimit,
+        },
+        "ROUTE_SIMULATION_FAILED",
+      );
+    }
     pass("5.route-simulation", {
-      note: "OKX aggregator v6 simulated the route before returning calldata",
+      note: "Route payload is guard-executable and the OKX v6 aggregator pre-simulated it",
       gasLimit: swap.gasLimit,
       router: swap.routerAddress,
     });
 
-    if (swap.toTokenIsHoneyPot) {
+    let tokenInfo: TokenAdvancedInfo;
+    try {
+      tokenInfo = await this.okx.getTokenAdvancedInfo(intent.toToken);
+    } catch (e) {
+      return fail("6.token-safety", { error: String(e) }, "TOKEN_UNSAFE");
+    }
+
+    const tokenAgeSeconds =
+      tokenInfo.createTimeMs !== undefined
+        ? Math.max(0, Math.floor((Date.now() - tokenInfo.createTimeMs) / 1000))
+        : undefined;
+
+    if (swap.toTokenIsHoneyPot || tokenInfo.tokenTags.includes("honeypot")) {
       return fail(
         "6.token-safety",
-        { symbol: swap.toTokenSymbol, isHoneyPot: true },
+        { symbol: swap.toTokenSymbol, tokenTags: tokenInfo.tokenTags, isHoneyPot: true },
         "TOKEN_UNSAFE",
       );
     }
@@ -183,11 +213,52 @@ export class Preflight {
         "TOKEN_UNSAFE",
       );
     }
+    if ((tokenInfo.riskControlLevel ?? 0) >= 4) {
+      return fail(
+        "6.token-safety",
+        { symbol: swap.toTokenSymbol, riskControlLevel: tokenInfo.riskControlLevel },
+        "TOKEN_UNSAFE",
+      );
+    }
+    if (
+      tokenInfo.top10HoldPercent !== undefined &&
+      Number.isFinite(tokenInfo.top10HoldPercent) &&
+      tokenInfo.top10HoldPercent > limits.maxHolderConcentrationPct
+    ) {
+      return fail(
+        "6.token-safety",
+        {
+          symbol: swap.toTokenSymbol,
+          top10HoldPercent: tokenInfo.top10HoldPercent,
+          maxHolderConcentrationPct: limits.maxHolderConcentrationPct,
+        },
+        "HOLDER_CONCENTRATION_TOO_HIGH",
+      );
+    }
+    if (
+      tokenAgeSeconds !== undefined &&
+      Number.isFinite(tokenAgeSeconds) &&
+      tokenAgeSeconds < limits.minTokenAgeSeconds
+    ) {
+      return fail(
+        "6.token-safety",
+        {
+          symbol: swap.toTokenSymbol,
+          tokenAgeSeconds,
+          minTokenAgeSeconds: limits.minTokenAgeSeconds,
+        },
+        "TOKEN_UNSAFE",
+      );
+    }
     pass("6.token-safety", {
       symbol: swap.toTokenSymbol,
       decimals: swap.toTokenDecimals,
       isHoneyPot: swap.toTokenIsHoneyPot,
       taxRateBps: swap.toTokenTaxRateBps,
+      riskControlLevel: tokenInfo.riskControlLevel,
+      top10HoldPercent: tokenInfo.top10HoldPercent,
+      tokenAgeSeconds,
+      tokenTags: tokenInfo.tokenTags,
     });
 
     if (swap.estimatedSlippageBps > limits.maxSlippageBps) {
@@ -232,28 +303,35 @@ export class Preflight {
           maxBps: MAX_PRICE_DEVIATION_BPS,
         });
       }
-    } catch {
-      // Candles may not exist for every token yet — non-fatal.
+    } catch (e) {
+      return fail("7b.price-deviation", { error: String(e) }, "PRICE_DEVIATION_TOO_HIGH");
     }
 
-    const quoteAge = (Date.now() - swap.quotedAt) / 1000;
-    if (quoteAge > limits.maxStaleQuoteSeconds) {
+    let priceUpdatedAt: number | undefined;
+    try {
+      const priceInfo = await this.okx.getPriceInfo(intent.toToken);
+      priceUpdatedAt = priceInfo.updatedAt;
+    } catch (e) {
+      return fail("8.quote-freshness", { error: String(e) }, "STALE_QUOTE");
+    }
+    const marketAgeSeconds =
+      priceUpdatedAt !== undefined ? (Date.now() - priceUpdatedAt) / 1000 : Number.POSITIVE_INFINITY;
+    if (marketAgeSeconds > limits.maxStaleQuoteSeconds) {
       return fail(
         "8.quote-freshness",
-        { ageSeconds: quoteAge, maxSeconds: limits.maxStaleQuoteSeconds },
+        { ageSeconds: marketAgeSeconds, maxSeconds: limits.maxStaleQuoteSeconds, priceUpdatedAt },
         "STALE_QUOTE",
       );
     }
     pass("8.quote-freshness", {
-      ageSeconds: quoteAge,
+      ageSeconds: marketAgeSeconds,
       maxSeconds: limits.maxStaleQuoteSeconds,
+      priceUpdatedAt,
     });
 
-    const tradeUsd =
-      (Number(fromAmount) / 10 ** swap.fromTokenDecimals) * swap.fromTokenUnitPrice;
-    const balanceUsd =
-      (Number(balance) / 10 ** swap.fromTokenDecimals) * swap.fromTokenUnitPrice;
-    const impactPct = balanceUsd > 0 ? (tradeUsd / balanceUsd) * 100 : 0;
+    const impactPct = balance > 0n ? Number((fromAmount * 10_000n) / balance) / 100 : 0;
+    const tradeUsd = toDisplayUnits(fromAmount, swap.fromTokenDecimals) * swap.fromTokenUnitPrice;
+    const balanceUsd = toDisplayUnits(balance, swap.fromTokenDecimals) * swap.fromTokenUnitPrice;
     if (impactPct > limits.maxPortfolioImpactPct) {
       return fail(
         "9.portfolio-policy",
@@ -274,36 +352,64 @@ export class Preflight {
     });
 
     const estimatedCostWei = (BigInt(swap.gasPriceWei) * BigInt(swap.gasLimit)).toString();
+    if (limits.maxGasCostWei && BigInt(estimatedCostWei) > BigInt(limits.maxGasCostWei)) {
+      return fail(
+        "10.gas-budget",
+        {
+          gasPriceWei: swap.gasPriceWei,
+          gasLimit: swap.gasLimit,
+          estimatedCostWei,
+          maxGasCostWei: limits.maxGasCostWei,
+        },
+        "GAS_INSUFFICIENT",
+      );
+    }
     pass("10.gas-budget", {
       gasPriceWei: swap.gasPriceWei,
       gasLimit: swap.gasLimit,
       estimatedCostWei,
+      maxGasCostWei: limits.maxGasCostWei ?? null,
     });
 
     const plan: VerifiedPlan = {
-      intent,
-      route: {
-        source: "okx-dex",
-        fromAmount: swap.fromAmount,
-        toAmount: swap.toAmount,
-        estimatedSlippageBps: swap.estimatedSlippageBps,
-        routerAddress: swap.routerAddress,
-        callData: swap.callData,
-        value: swap.value,
-      },
-      gas: {
-        gasPriceWei: swap.gasPriceWei,
-        gasLimit: swap.gasLimit,
-        estimatedCostWei,
-      },
-      expiresAt: Date.now() + PLAN_TTL_MS,
+      caller: intent.caller as `0x${string}`,
+      fromToken: intent.fromToken as `0x${string}`,
+      toToken: intent.toToken as `0x${string}`,
+      fromAmount: intent.amount,
+      minToAmount: deriveMinToAmount(swap.toAmount, limits.maxSlippageBps),
+      router: swap.routerAddress as `0x${string}`,
+      callData: swap.callData as `0x${string}`,
+      value: swap.value,
+      expiresAt: Math.floor(Date.now() / 1000) + PLAN_TTL_SECONDS,
       nonce: planNonce(),
     };
-    const signature = await this.signer.sign(plan, limits.maxSlippageBps);
+    const signature = await this.signer.sign(plan);
+    const quote: QuoteSummary = {
+      source: "okx-dex",
+      expectedToAmount: swap.toAmount,
+      estimatedSlippageBps: swap.estimatedSlippageBps,
+      liquiditySources: swap.liquiditySources,
+      approvalTarget,
+      gasPriceWei: swap.gasPriceWei,
+      gasLimit: swap.gasLimit,
+      estimatedCostWei,
+      quotedAt: swap.quotedAt,
+      ...(priceUpdatedAt !== undefined && { priceUpdatedAt }),
+      tokenSymbol: swap.toTokenSymbol,
+      tokenTags: tokenInfo.tokenTags,
+      ...(tokenInfo.riskControlLevel !== undefined && {
+        riskControlLevel: tokenInfo.riskControlLevel,
+      }),
+      ...(tokenInfo.top10HoldPercent !== undefined && {
+        top10HoldPercent: tokenInfo.top10HoldPercent,
+      }),
+      ...(tokenAgeSeconds !== undefined && { tokenAgeSeconds }),
+    };
 
     return {
       verdict: "pass",
       plan,
+      quote,
       signature,
       signer: this.signer.address,
       checks,

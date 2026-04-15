@@ -15,6 +15,7 @@ export type Preset = {
     minTokenAgeSeconds: number;
     maxPortfolioImpactPct: number;
     maxStaleQuoteSeconds: number;
+    maxGasCostWei?: string;
   };
   expectedOutcome: "pass" | "block";
   expectedReason?: string;
@@ -36,33 +37,33 @@ export const POLICY_PROFILES: PolicyProfile[] = [
   {
     id: "conservative",
     name: "Conservative",
-    description: "Retail wallet. Tight slippage, low portfolio impact, fresh quotes only.",
+    description: "Retail wallet. Tight slippage, low concentration tolerance, fresh market data only.",
     limits: {
       maxSlippageBps: 50,
       maxHolderConcentrationPct: 30,
       minTokenAgeSeconds: 604_800,
       maxPortfolioImpactPct: 10,
       maxStaleQuoteSeconds: 30,
+      maxGasCostWei: "200000000000000",
     },
   },
   {
     id: "treasury",
     name: "Treasury",
-    description:
-      "DAO or agentic treasury. Moderate slippage, strict token safety, meaningful trade sizing.",
+    description: "DAO or agentic treasury. Moderate slippage, older-token bias, explicit gas cap.",
     limits: {
       maxSlippageBps: 100,
       maxHolderConcentrationPct: 40,
       minTokenAgeSeconds: 2_592_000,
       maxPortfolioImpactPct: 25,
       maxStaleQuoteSeconds: 60,
+      maxGasCostWei: "400000000000000",
     },
   },
   {
     id: "degen",
     name: "Degen",
-    description:
-      "Size up quickly on new tokens — wider slippage and portfolio impact, but still enforced.",
+    description: "Size up quickly on new tokens with wider limits, but still signed and enforced.",
     limits: {
       maxSlippageBps: 500,
       maxHolderConcentrationPct: 90,
@@ -76,9 +77,9 @@ export const POLICY_PROFILES: PolicyProfile[] = [
 export const PRESETS: Preset[] = [
   {
     id: "safe-usdc-okb",
-    label: "Safe trade: 0.1 USDC → OKB",
+    label: "Safe trade: 0.1 USDC to OKB",
     description:
-      "Well-known tokens, recent liquidity, caller holds balance and has approved router. Expect: pass with signed plan.",
+      "Known pair, caller holds balance, and the result should return a signed guard-ready plan.",
     intent: {
       action: "swap",
       fromToken: USDC,
@@ -96,15 +97,15 @@ export const PRESETS: Preset[] = [
     expectedOutcome: "pass",
   },
   {
-    id: "rug-concentration",
-    label: "Rug-risk: token with 95%+ top-holder concentration",
+    id: "strict-concentration",
+    label: "Strict policy: top holders must stay below 5%",
     description:
-      "Caller wants to swap into a token whose top holders control most supply. PreflightX blocks via HOLDER_CONCENTRATION_TOO_HIGH.",
+      "Uses an intentionally unrealistic concentration cap to prove the holder-concentration check blocks the trade.",
     intent: {
       action: "swap",
       fromToken: USDC,
       toToken: OKB,
-      amount: "1000000",
+      amount: "100000",
       caller: DEMO_CALLER,
     },
     limits: {
@@ -121,12 +122,12 @@ export const PRESETS: Preset[] = [
     id: "tight-slippage",
     label: "Tight slippage: allow only 1 bps",
     description:
-      "Caller sets a slippage envelope narrower than the aggregator's quoted slippage. PreflightX blocks via SLIPPAGE_EXCEEDED before broadcast.",
+      "Caller sets a slippage envelope narrower than the aggregator quote. PreflightX blocks before execution.",
     intent: {
       action: "swap",
       fromToken: USDC,
       toToken: OKB,
-      amount: "1000000",
+      amount: "100000",
       caller: DEMO_CALLER,
     },
     limits: {
@@ -143,7 +144,7 @@ export const PRESETS: Preset[] = [
     id: "insufficient-balance",
     label: "Missing balance: caller holds no USDC",
     description:
-      "Direct X Layer RPC balanceOf returns less than intent.amount. PreflightX short-circuits at step 3 with INSUFFICIENT_BALANCE.",
+      "Direct X Layer RPC balanceOf returns less than intent.amount. The verifier stops at the balance check.",
     intent: {
       action: "swap",
       fromToken: USDC,
@@ -162,15 +163,15 @@ export const PRESETS: Preset[] = [
     expectedReason: "INSUFFICIENT_BALANCE",
   },
   {
-    id: "usdc-usdt",
-    label: "Stable → Stable: 1 USDC → USDT",
+    id: "stable-to-stable",
+    label: "Stable to Stable: 0.1 USDC to USDT",
     description:
-      "Same stable-to-stable flow. Cross-source divergence between OKX DEX and Uniswap AI is usually within 50 bps, so this passes.",
+      "A stable pair that should normally pass unless a policy profile makes it stricter.",
     intent: {
       action: "swap",
       fromToken: USDC,
       toToken: USDT,
-      amount: "1000000",
+      amount: "100000",
       caller: DEMO_CALLER,
     },
     limits: {

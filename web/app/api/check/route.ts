@@ -17,6 +17,7 @@ export async function POST(req: Request) {
     const secretKey = process.env.ONCHAINOS_SECRET_KEY;
     const passphrase = process.env.ONCHAINOS_PASSPHRASE;
     const signerPk = process.env.PREFLIGHTX_SIGNER_PK as `0x${string}` | undefined;
+    const guardContractAddress = process.env.PREFLIGHTGUARD_ADDRESS as `0x${string}` | undefined;
 
     if (!apiKey || !secretKey || !passphrase || !signerPk) {
       return NextResponse.json(
@@ -30,26 +31,21 @@ export async function POST(req: Request) {
       onchainosSecretKey: secretKey,
       onchainosPassphrase: passphrase,
       signerPrivateKey: signerPk,
+      ...(guardContractAddress && { guardContractAddress }),
     });
 
     const result = await preflight.check(intent, limits);
-
-    const firstRouteDetails = result.checks.find((c) => c.step === "1.route-discovery")
-      ?.details as { liquiditySources?: unknown } | undefined;
-    const tokenSafetyDetails = result.checks.find((c) => c.step === "6.token-safety")
-      ?.details as { symbol?: string } | undefined;
 
     pushEntry({
       verdict: result.verdict,
       fromToken: intent.fromToken,
       toToken: intent.toToken,
-      toSymbol: tokenSafetyDetails?.symbol,
+      toSymbol: result.quote?.tokenSymbol,
       amount: intent.amount,
       ...(result.failedReasonCodes[0] && { reasonCode: result.failedReasonCodes[0] }),
       ...(result.signer && { signer: result.signer }),
       ...(presetLabel && { presetLabel }),
     });
-    void firstRouteDetails;
 
     return NextResponse.json(result);
   } catch (err) {

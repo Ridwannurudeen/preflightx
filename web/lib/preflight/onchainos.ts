@@ -20,6 +20,13 @@ function signRequest(
   return createHmac("sha256", secretKey).update(preHash).digest("base64");
 }
 
+function coerceUnixMs(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return n < 10_000_000_000 ? Math.trunc(n * 1000) : Math.trunc(n);
+}
+
 export interface SwapResult {
   fromAmount: string;
   toAmount: string;
@@ -46,6 +53,18 @@ export interface CandleRow {
   ts: number;
   open: number;
   close: number;
+}
+
+export interface TokenAdvancedInfo {
+  createTimeMs?: number;
+  riskControlLevel?: number;
+  top10HoldPercent?: number;
+  tokenTags: string[];
+}
+
+export interface PriceInfo {
+  price?: number;
+  updatedAt?: number;
 }
 
 export class OnchainosClient {
@@ -106,6 +125,14 @@ export class OnchainosClient {
     const sources = (r.dexRouterList ?? []).map(
       (d: { dexProtocol?: { dexName?: string } }) => d.dexProtocol?.dexName ?? "",
     );
+    const quotedAt =
+      coerceUnixMs(root.quoteTime) ??
+      coerceUnixMs(root.time) ??
+      coerceUnixMs(r.quoteTime) ??
+      coerceUnixMs(tx.txTime) ??
+      coerceUnixMs(tx.time) ??
+      coerceUnixMs(tx.timestamp) ??
+      Date.now();
 
     return {
       fromAmount: r.fromTokenAmount,
@@ -126,7 +153,7 @@ export class OnchainosClient {
       fromTokenDecimals: Number(fromTok.decimal ?? 18),
       fromTokenUnitPrice: Number(fromTok.tokenUnitPrice ?? 0),
       contextSlot: Number(r.contextSlot ?? 0),
-      quotedAt: Date.now(),
+      quotedAt,
     };
   }
 
@@ -152,5 +179,52 @@ export class OnchainosClient {
         return { ts: Number(r.ts), open: Number(r.o), close: Number(r.c) };
       })
       .filter((r: CandleRow) => Number.isFinite(r.close) && r.close > 0);
+  }
+
+  async getTokenAdvancedInfo(tokenAddress: string): Promise<TokenAdvancedInfo> {
+    const { data } = await this.http.get("/api/v6/dex/market/token/advanced-info", {
+      params: {
+        chainIndex: X_LAYER_CHAIN_ID,
+        tokenContractAddress: tokenAddress,
+      },
+    });
+    const row = data?.data;
+    if (!row || typeof row !== "object") {
+      throw new Error(`OnchainOS token advanced-info: empty response (code=${data?.code}, msg=${data?.msg})`);
+    }
+
+    const createTimeMs = coerceUnixMs((row as { createTime?: string }).createTime);
+    const riskControlLevel = Number((row as { riskControlLevel?: string }).riskControlLevel ?? "");
+    const top10HoldPercent = Number((row as { top10HoldPercent?: string }).top10HoldPercent ?? "");
+    return {
+      ...(createTimeMs !== undefined && { createTimeMs }),
+      ...(Number.isFinite(riskControlLevel) && { riskControlLevel }),
+      ...(Number.isFinite(top10HoldPercent) && { top10HoldPercent }),
+      tokenTags: Array.isArray((row as { tokenTags?: unknown[] }).tokenTags)
+        ? (row as { tokenTags: unknown[] }).tokenTags.filter(
+            (tag): tag is string => typeof tag === "string" && tag.length > 0,
+          )
+        : [],
+    };
+  }
+
+  async getPriceInfo(tokenAddress: string): Promise<PriceInfo> {
+    const { data } = await this.http.post("/api/v6/dex/market/price-info", [
+      {
+        chainIndex: String(X_LAYER_CHAIN_ID),
+        tokenContractAddress: tokenAddress,
+      },
+    ]);
+    const row = data?.data?.[0];
+    if (!row || typeof row !== "object") {
+      throw new Error(`OnchainOS price-info: empty response (code=${data?.code}, msg=${data?.msg})`);
+    }
+
+    const price = Number((row as { price?: string }).price ?? "");
+    const updatedAt = coerceUnixMs((row as { time?: string }).time);
+    return {
+      ...(Number.isFinite(price) && { price }),
+      ...(updatedAt !== undefined && { updatedAt }),
+    };
   }
 }

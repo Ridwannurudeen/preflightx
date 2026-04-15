@@ -4,13 +4,7 @@ import {
   type PrivateKeyAccount,
 } from "viem/accounts";
 import { recoverTypedDataAddress, type Hex } from "viem";
-import {
-  EIP712_DOMAIN,
-  EIP712_TYPES,
-  planToEip712,
-  type EIP712Plan,
-  type VerifiedPlan,
-} from "./types.js";
+import { EIP712_DOMAIN, EIP712_TYPES, planToEip712, type VerifiedPlan } from "./types.js";
 
 export class PlanSigner {
   private readonly account: PrivateKeyAccount;
@@ -23,8 +17,8 @@ export class PlanSigner {
     return this.account.address;
   }
 
-  async sign(plan: VerifiedPlan, slippageBps: number): Promise<Hex> {
-    const message = planToEip712(plan, slippageBps);
+  async sign(plan: VerifiedPlan): Promise<Hex> {
+    const message = planToEip712(plan);
     return this.account.signTypedData({
       domain: EIP712_DOMAIN,
       types: EIP712_TYPES,
@@ -33,12 +27,8 @@ export class PlanSigner {
     });
   }
 
-  static async verify(
-    plan: VerifiedPlan,
-    slippageBps: number,
-    signature: Hex,
-  ): Promise<`0x${string}`> {
-    const message = planToEip712(plan, slippageBps);
+  static async verify(plan: VerifiedPlan, signature: Hex): Promise<`0x${string}`> {
+    const message = planToEip712(plan);
     return recoverTypedDataAddress({
       domain: EIP712_DOMAIN,
       types: EIP712_TYPES,

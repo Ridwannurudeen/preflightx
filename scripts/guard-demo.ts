@@ -43,38 +43,34 @@ if (result.verdict !== "pass") {
   process.exit(1);
 }
 
-const plan = result.plan;
-const signature = result.signature;
-
 const guardAbi = parseAbi([
   "function executeWithPreflight((address caller, address fromToken, address toToken, uint256 fromAmount, uint256 minToAmount, address router, bytes callData, uint256 value, uint256 expiresAt, bytes32 nonce) plan, bytes signature) external payable returns (uint256)",
 ]);
 
-const expectedOut = BigInt(plan.route.toAmount);
-const minToAmount = expectedOut - (expectedOut * 200n) / 10_000n;
-
-const planStruct = {
-  caller: plan.intent.caller as `0x${string}`,
-  fromToken: plan.intent.fromToken as `0x${string}`,
-  toToken: plan.intent.toToken as `0x${string}`,
-  fromAmount: BigInt(plan.intent.amount),
-  minToAmount,
-  router: plan.route.routerAddress as `0x${string}`,
-  callData: plan.route.callData as `0x${string}`,
-  value: BigInt(plan.route.value || "0"),
-  expiresAt: BigInt(Math.floor(plan.expiresAt / 1000)),
-  nonce: plan.nonce as `0x${string}`,
-};
-
 const calldata = encodeFunctionData({
   abi: guardAbi,
   functionName: "executeWithPreflight",
-  args: [planStruct, signature as `0x${string}`],
+  args: [
+    result.plan as {
+      caller: `0x${string}`;
+      fromToken: `0x${string}`;
+      toToken: `0x${string}`;
+      fromAmount: string;
+      minToAmount: string;
+      router: `0x${string}`;
+      callData: `0x${string}`;
+      value: string;
+      expiresAt: number;
+      nonce: `0x${string}`;
+    },
+    result.signature as `0x${string}`,
+  ],
 });
 
 console.log("Guard:", env.PREFLIGHTGUARD_ADDRESS);
-console.log("Plan nonce:", plan.nonce);
-console.log("From:", plan.intent.caller);
+console.log("Plan nonce:", result.plan.nonce);
+console.log("Caller:", result.plan.caller);
+console.log("Approval target:", result.quote?.approvalTarget ?? env.PREFLIGHTGUARD_ADDRESS);
 console.log("Calldata length:", calldata.length);
 console.log();
 console.log("--- Paste this to execute through the guard ---");

@@ -11,7 +11,12 @@ const env = Object.fromEntries(
     }),
 );
 
-const required = ["ONCHAINOS_API_KEY", "ONCHAINOS_SECRET_KEY", "ONCHAINOS_PASSPHRASE"];
+const required = [
+  "ONCHAINOS_API_KEY",
+  "ONCHAINOS_SECRET_KEY",
+  "ONCHAINOS_PASSPHRASE",
+  "PREFLIGHTX_SIGNER_PK",
+];
 for (const k of required) {
   if (!env[k]) {
     console.error(`Missing ${k} in .env`);
@@ -20,9 +25,13 @@ for (const k of required) {
 }
 
 const preflight = new Preflight({
-  onchainosApiKey: env.ONCHAINOS_API_KEY!,
-  onchainosSecretKey: env.ONCHAINOS_SECRET_KEY!,
-  onchainosPassphrase: env.ONCHAINOS_PASSPHRASE!,
+  onchainosApiKey: env.ONCHAINOS_API_KEY as string,
+  onchainosSecretKey: env.ONCHAINOS_SECRET_KEY as string,
+  onchainosPassphrase: env.ONCHAINOS_PASSPHRASE as string,
+  signerPrivateKey: env.PREFLIGHTX_SIGNER_PK as `0x${string}`,
+  ...(env.PREFLIGHTGUARD_ADDRESS && {
+    guardContractAddress: env.PREFLIGHTGUARD_ADDRESS as `0x${string}`,
+  }),
 });
 
 const USDC_X_LAYER = "0x74b7F16337b8972027F6196A17a631aC6dE26d22";
@@ -34,7 +43,7 @@ const result = await preflight.check(
     fromToken: USDC_X_LAYER,
     toToken: OKB,
     amount: "1000000",
-    caller: process.env.DEMO_CALLER ?? "0x0000000000000000000000000000000000000000",
+    caller: (env.DEMO_CALLER as `0x${string}` | undefined) ?? "0x0000000000000000000000000000000000000000",
   },
   {
     maxSlippageBps: 200,

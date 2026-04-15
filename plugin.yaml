@@ -1,7 +1,7 @@
 schema_version: 1
 name: preflightx
-version: "0.1.0"
-description: "Pre-execution verification skill for autonomous DeFi agents on X Layer. Composes OnchainOS DEX, market, and Onchain Gateway skills with Uniswap AI to validate routes, slippage, token safety, and portfolio policy before settlement. Trigger phrases: preflight this trade, verify route, check slippage, validate execution plan, run preflight, is this trade safe, audit this swap."
+version: "0.3.0"
+description: "Verify X Layer swaps against live state and return the exact PreflightGuard plan struct plus an EIP-712 signature."
 author:
   name: gudman
   github: Ridwannurudeen
@@ -14,7 +14,6 @@ tags:
   - verification
   - preflight
   - agent-tooling
-  - x402
 license: MIT
 
 components:
@@ -26,13 +25,9 @@ build:
   entry: src/index.ts
 
 api_calls:
-  - "https://web3.okx.com/api/v5/dex/aggregator/quote"
-  - "https://web3.okx.com/api/v5/wallet/asset/total-value"
-  - "https://web3.okx.com/api/v5/wallet/chain/balances"
-  - "https://web3.okx.com/api/v5/dex/market/price"
-  - "https://web3.okx.com/api/v5/dex/market/candles"
-  - "https://web3.okx.com/api/v5/dex/market/candles"
-  - "https://web3.okx.com/api/v5/dex/aggregator/onchain-gateway/simulate-tx"
-  - "https://web3.okx.com/api/v5/dex/aggregator/onchain-gateway/gas-price"
-  - "https://web3.okx.com/api/v5/dex/aggregator/onchain-gateway/gas-limit"
+  - "https://web3.okx.com/api/v6/dex/aggregator/swap"
+  - "https://web3.okx.com/api/v6/dex/market/candles"
+  - "https://web3.okx.com/api/v6/dex/market/token/advanced-info"
+  - "https://web3.okx.com/api/v6/dex/market/price-info"
+  - "https://trade-api.gateway.uniswap.org/v1/quote"
   - "https://rpc.xlayer.tech"
