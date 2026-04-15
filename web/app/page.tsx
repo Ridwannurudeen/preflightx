@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { PRESETS, type Preset } from "@/lib/presets";
+import { useEffect, useState } from "react";
+import { PRESETS, POLICY_PROFILES, type Preset, type PolicyProfile } from "@/lib/presets";
 
 type CheckResult = {
   verdict: "pass" | "fail";
@@ -24,6 +24,18 @@ type CheckResult = {
   error?: string;
 };
 
+type FeedEntry = {
+  id: string;
+  timestamp: number;
+  verdict: "pass" | "fail";
+  fromToken: string;
+  toToken: string;
+  toSymbol?: string;
+  amount: string;
+  reasonCode?: string;
+  presetLabel?: string;
+};
+
 const GUARD = "0xccaeeb946a0511e0a1fd4497dd6f4e59294478eb";
 const SIGNER = "0xd0C14e287fF6E0B0EC6591BC14FE66CB06FAa0AA";
 
@@ -32,20 +44,50 @@ function truncate(s: string, head = 10, tail = 6): string {
   return `${s.slice(0, head)}…${s.slice(-tail)}`;
 }
 
+function ago(ms: number): string {
+  const diff = Math.floor((Date.now() - ms) / 1000);
+  if (diff < 5) return "just now";
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
+
 export default function Home() {
   const [selected, setSelected] = useState<Preset>(PRESETS[0]);
+  const [profile, setProfile] = useState<PolicyProfile | null>(null);
   const [result, setResult] = useState<CheckResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [feed, setFeed] = useState<FeedEntry[]>([]);
+
+  useEffect(() => {
+    const tick = async () => {
+      try {
+        const r = await fetch("/api/feed", { cache: "no-store" });
+        const data = await r.json();
+        setFeed(data.entries ?? []);
+      } catch {
+        // ignore
+      }
+    };
+    void tick();
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
+  }, []);
 
   const run = async (preset: Preset) => {
     setSelected(preset);
     setResult(null);
     setLoading(true);
+    const limits = profile ? profile.limits : preset.limits;
     try {
       const res = await fetch("/api/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intent: preset.intent, limits: preset.limits }),
+        body: JSON.stringify({
+          intent: preset.intent,
+          limits,
+          presetLabel: profile ? `${preset.label} · ${profile.name}` : preset.label,
+        }),
       });
       const data = (await res.json()) as CheckResult;
       setResult(data);
@@ -63,7 +105,7 @@ export default function Home() {
   };
 
   return (
-    <main className="max-w-5xl mx-auto px-6 py-16">
+    <main className="max-w-6xl mx-auto px-6 py-16">
       <header className="mb-16">
         <div className="text-xs uppercase tracking-widest text-mute mb-4">
           OKX Build X · Skill Arena
@@ -74,12 +116,12 @@ export default function Home() {
           <span className="text-mute">Enforce it on-chain.</span>
         </h1>
         <p className="text-lg text-gray-400 max-w-2xl leading-relaxed">
-          PreflightX is a single-call verification skill for autonomous DeFi agents on X Layer. One
-          call composes 8 OnchainOS endpoints, Uniswap AI cross-validation, and direct X Layer RPC
-          reads. On pass you get an EIP-712 signed plan. The{" "}
+          PreflightX is a single-call verification skill for autonomous DeFi agents on X Layer.
+          OnchainOS v6 aggregator + Uniswap AI cross-validation + direct X Layer RPC reads. On
+          pass, you get an EIP-712 signed plan. The{" "}
           <code className="bg-card px-1.5 py-0.5 rounded text-sm">PreflightGuard</code> contract
-          only forwards a swap if that signature is fresh, unused, and bound to the caller — so the
-          slippage commitment is enforced by the chain, not by promise.
+          only forwards a swap if that signature is fresh, unused, and bound to the caller — so
+          the slippage commitment is enforced by the chain, not by promise.
         </p>
         <div className="mt-8 flex flex-wrap gap-3 text-xs">
           <a
@@ -103,7 +145,37 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="mb-20">
+      <section className="mb-16">
+        <div className="flex items-baseline justify-between mb-6">
+          <h2 className="text-2xl font-semibold">Policy profile</h2>
+          <span className="text-xs text-mute">{profile ? "enforced against every check below" : "scenario defaults applied"}</span>
+        </div>
+        <div className="grid md:grid-cols-4 gap-3">
+          <button
+            onClick={() => setProfile(null)}
+            className={`text-left p-4 bg-card border rounded-lg transition ${
+              profile === null ? "border-ok" : "border-border hover:border-gray-700"
+            }`}
+          >
+            <div className="font-medium mb-1 text-sm">Scenario defaults</div>
+            <div className="text-xs text-mute">Each scenario brings its own limits.</div>
+          </button>
+          {POLICY_PROFILES.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setProfile(p)}
+              className={`text-left p-4 bg-card border rounded-lg transition ${
+                profile?.id === p.id ? "border-ok" : "border-border hover:border-gray-700"
+              }`}
+            >
+              <div className="font-medium mb-1 text-sm">{p.name}</div>
+              <div className="text-xs text-mute leading-snug">{p.description}</div>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-16">
         <div className="flex items-baseline justify-between mb-6">
           <h2 className="text-2xl font-semibold">Try a trade. See what PreflightX blocks.</h2>
           <span className="text-xs text-mute">live against X Layer mainnet</span>
@@ -149,21 +221,60 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="mb-20">
+      <section className="mb-16">
+        <div className="flex items-baseline justify-between mb-4">
+          <h2 className="text-2xl font-semibold">Live check feed</h2>
+          <span className="text-xs text-mute">updates every 5s · last 50 checks across all visitors</span>
+        </div>
+        <div className="bg-card border border-border rounded-lg">
+          {feed.length === 0 && (
+            <div className="p-6 text-mute text-sm">
+              No checks yet. Run a scenario above — it appears here and in every other visitor's feed.
+            </div>
+          )}
+          {feed.slice(0, 10).map((e) => (
+            <div
+              key={e.id}
+              className="flex items-center gap-3 px-4 py-2.5 border-b border-border last:border-b-0 text-xs font-mono"
+            >
+              <span
+                className={`h-2 w-2 rounded-full shrink-0 ${
+                  e.verdict === "pass" ? "bg-ok" : "bg-bad"
+                }`}
+              />
+              <span className="text-mute w-16">{ago(e.timestamp)}</span>
+              <span
+                className={`${e.verdict === "pass" ? "text-ok" : "text-bad"} w-16 shrink-0`}
+              >
+                {e.verdict === "pass" ? "SIGNED" : "BLOCKED"}
+              </span>
+              <span className="text-gray-400 flex-1 truncate">
+                {e.presetLabel ??
+                  `${truncate(e.fromToken, 8, 4)} → ${truncate(e.toToken, 8, 4)}`}
+              </span>
+              {e.reasonCode && (
+                <span className="text-bad shrink-0">{e.reasonCode}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-16">
         <h2 className="text-2xl font-semibold mb-6">How it works</h2>
         <div className="grid md:grid-cols-2 gap-4 text-sm">
           {[
-            ["1. Dual-source route", "OnchainOS DEX quote + Uniswap AI quote in parallel."],
+            ["1. Dual-source route", "OnchainOS v6 /dex/aggregator/swap + Uniswap AI in parallel."],
             ["2. Cross-source divergence", "Blocks trades where the two engines disagree > 50 bps."],
             ["3. ERC-20 balance", "viem readContract balanceOf on X Layer."],
             ["4. ERC-20 allowance", "viem readContract allowance(caller, router)."],
-            ["5. Simulate tx", "OnchainOS Onchain Gateway simulate-tx."],
-            ["6. Token safety", "OnchainOS Market token-info — verified flag, holder concentration."],
+            ["5. Route simulation", "OKX v6 aggregator simulates internally before returning calldata."],
+            ["6. Token safety", "isHoneyPot flag + taxRate from the v6 swap response."],
             ["7. Slippage envelope", "Quoted slippage ≤ caller's maxSlippageBps."],
-            ["7b. Price deviation", "OnchainOS Market candles — current price within 1000 bps of recent mean."],
+            ["7b. Price deviation", "v6 /dex/market/candles — current price within 1000 bps of recent mean."],
             ["8. Quote freshness", "Reject quotes older than maxStaleQuoteSeconds."],
-            ["9. Portfolio policy", "OnchainOS Wallet total-value + balances."],
-            ["10. Gas pricing", "OnchainOS Onchain Gateway gas-price."],
+            ["9. Portfolio policy", "Trade USD ≤ maxPortfolioImpactPct of fromToken balance."],
+            ["10. Gas pricing", "gasPrice × gasLimit from v6 swap response."],
             ["11. Sign plan", "EIP-712 typed data, recoverable to PreflightX signer."],
           ].map(([title, body]) => (
             <div key={title} className="bg-card border border-border rounded p-4">
@@ -206,7 +317,8 @@ function ResultPanel({ result, selected }: { result: CheckResult; selected: Pres
             {result.failedReasonCodes[0]}
           </span>
         )}
-        {selected.expectedReason && !passed &&
+        {selected.expectedReason &&
+          !passed &&
           result.failedReasonCodes[0] === selected.expectedReason && (
             <span className="text-xs text-mute">(matches expected outcome)</span>
           )}

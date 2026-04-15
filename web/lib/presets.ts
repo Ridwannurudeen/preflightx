@@ -25,6 +25,54 @@ const OKB = "0xe538905cf8410324e03A5A23C1c177a474D59b2b";
 const USDT = "0x1E4a5963aBFD975d8c9021ce480b42188849D41d";
 const DEMO_CALLER = "0xefb90722a4731c01d64adb11e4dd8d76dd73911e";
 
+export type PolicyProfile = {
+  id: string;
+  name: string;
+  description: string;
+  limits: Preset["limits"];
+};
+
+export const POLICY_PROFILES: PolicyProfile[] = [
+  {
+    id: "conservative",
+    name: "Conservative",
+    description: "Retail wallet. Tight slippage, low portfolio impact, fresh quotes only.",
+    limits: {
+      maxSlippageBps: 50,
+      maxHolderConcentrationPct: 30,
+      minTokenAgeSeconds: 604_800,
+      maxPortfolioImpactPct: 10,
+      maxStaleQuoteSeconds: 30,
+    },
+  },
+  {
+    id: "treasury",
+    name: "Treasury",
+    description:
+      "DAO or agentic treasury. Moderate slippage, strict token safety, meaningful trade sizing.",
+    limits: {
+      maxSlippageBps: 100,
+      maxHolderConcentrationPct: 40,
+      minTokenAgeSeconds: 2_592_000,
+      maxPortfolioImpactPct: 25,
+      maxStaleQuoteSeconds: 60,
+    },
+  },
+  {
+    id: "degen",
+    name: "Degen",
+    description:
+      "Size up quickly on new tokens — wider slippage and portfolio impact, but still enforced.",
+    limits: {
+      maxSlippageBps: 500,
+      maxHolderConcentrationPct: 90,
+      minTokenAgeSeconds: 0,
+      maxPortfolioImpactPct: 100,
+      maxStaleQuoteSeconds: 120,
+    },
+  },
+];
+
 export const PRESETS: Preset[] = [
   {
     id: "safe-usdc-okb",

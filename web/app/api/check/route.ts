@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Preflight } from "@/lib/preflight/verifier";
+import { pushEntry } from "@/lib/feed";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,7 +8,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { intent, limits } = body ?? {};
+    const { intent, limits, presetLabel } = body ?? {};
     if (!intent || !limits) {
       return NextResponse.json({ error: "missing intent or limits" }, { status: 400 });
     }
@@ -32,6 +33,24 @@ export async function POST(req: Request) {
     });
 
     const result = await preflight.check(intent, limits);
+
+    const firstRouteDetails = result.checks.find((c) => c.step === "1.route-discovery")
+      ?.details as { liquiditySources?: unknown } | undefined;
+    const tokenSafetyDetails = result.checks.find((c) => c.step === "6.token-safety")
+      ?.details as { symbol?: string } | undefined;
+
+    pushEntry({
+      verdict: result.verdict,
+      fromToken: intent.fromToken,
+      toToken: intent.toToken,
+      toSymbol: tokenSafetyDetails?.symbol,
+      amount: intent.amount,
+      ...(result.failedReasonCodes[0] && { reasonCode: result.failedReasonCodes[0] }),
+      ...(result.signer && { signer: result.signer }),
+      ...(presetLabel && { presetLabel }),
+    });
+    void firstRouteDetails;
+
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
