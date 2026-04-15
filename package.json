@@ -22,6 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "demo": "tsx scripts/demo.ts",
+    "agent-demo": "tsx scripts/agent-demo.ts",
     "gen-signer": "tsx scripts/gen-signer.ts",
     "compile": "tsx scripts/compile.ts",
     "deploy": "tsx scripts/deploy.ts",
