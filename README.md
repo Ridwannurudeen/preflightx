@@ -17,7 +17,7 @@ Live deployment:
 
 ## What's inside the single `preflight.check()` call
 
-PreflightX composes **8 distinct OnchainOS endpoints** + Uniswap AI + direct X Layer RPC reads:
+PreflightX composes **OnchainOS v6 (`dex/aggregator/swap` + `dex/market/candles`) + Uniswap AI + direct X Layer RPC reads**:
 
 | Step | Surface | Check |
 |---|---|---|
@@ -33,7 +33,7 @@ PreflightX composes **8 distinct OnchainOS endpoints** + Uniswap AI + direct X L
 | 9 | OnchainOS Wallet `total-value` + `all-token-balances` | Trade size ≤ portfolio impact cap |
 | 10 | OnchainOS Onchain Gateway `gas-price` | Computes total estimated cost |
 
-**OnchainOS endpoints hit (8 distinct):** `dex/aggregator/quote`, `dex/aggregator/onchain-gateway/simulate-tx`, `dex/aggregator/onchain-gateway/gas-price`, `dex/market/token-info`, `dex/market/price`, `dex/market/candles`, `wallet/asset/total-value`, `wallet/asset/all-token-balances`. Endpoints match OnchainOS `llms.txt` as of Apr 14 2026; if OKX migrates paths to `v6`, the skill surface is unaffected — only the underlying client paths need updating.
+**OnchainOS v6 endpoints hit:** `/api/v6/dex/aggregator/swap` (consolidates route + calldata + router + min-receive + gas + honeypot flag + tax rate + unit price + decimals into one signed request), `/api/v6/dex/market/candles` (recent OHLCV for price-deviation check). OKX deprecated v5 mid-hackathon; the v6 `swap` endpoint runs routing, simulation, and token-safety lookups internally — so one call surfaces the state that used to require six.
 
 The pipeline **short-circuits on the first failure** and returns a single reason code. On full pass it returns a `VerifiedPlan` valid for 90 seconds, with a single-use nonce and an EIP-712 signature recoverable to the published signer.
 

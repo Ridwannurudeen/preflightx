@@ -44,7 +44,7 @@ The verifier **short-circuits on the first failure** and returns a single reason
 | 9 | Portfolio policy | OnchainOS Wallet `total-value` + `all-token-balances` |
 | 10 | Gas pricing | OnchainOS Onchain Gateway `gas-price` |
 
-**OnchainOS endpoints hit (8 distinct):** `dex/aggregator/quote`, `dex/aggregator/onchain-gateway/simulate-tx`, `dex/aggregator/onchain-gateway/gas-price`, `dex/market/token-info`, `dex/market/price`, `dex/market/candles`, `wallet/asset/total-value`, `wallet/asset/all-token-balances`. Plus Uniswap AI quote + direct X Layer RPC `balanceOf` / `allowance`.
+**OnchainOS v6 endpoints hit:** `/api/v6/dex/aggregator/swap` (single call returns route + calldata + router + min-receive + gas + honeypot flag + tax rate + unit price + decimals — the v6 aggregator runs routing/simulation/safety-lookups internally), `/api/v6/dex/market/candles` (recent OHLCV for price-deviation check). Plus Uniswap AI quote cross-validation + direct X Layer RPC `balanceOf` / `allowance` on the caller.
 
 On pass: produces an EIP-712 signed `VerifiedPlan` with a 90-second TTL and a single-use nonce.
 

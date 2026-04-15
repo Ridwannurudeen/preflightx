@@ -28,14 +28,14 @@ const DEMO_CALLER = "0xefb90722a4731c01d64adb11e4dd8d76dd73911e";
 export const PRESETS: Preset[] = [
   {
     id: "safe-usdc-okb",
-    label: "Safe trade: 1 USDC → OKB",
+    label: "Safe trade: 0.1 USDC → OKB",
     description:
       "Well-known tokens, recent liquidity, caller holds balance and has approved router. Expect: pass with signed plan.",
     intent: {
       action: "swap",
       fromToken: USDC,
       toToken: OKB,
-      amount: "1000000",
+      amount: "100000",
       caller: DEMO_CALLER,
     },
     limits: {
