@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
 import { createHmac } from "node:crypto";
-import { X_LAYER_CHAIN_ID } from "./types.js";
+import { X_LAYER_CHAIN_ID } from "./types";
 
 export interface OnchainosClientOptions {
   apiKey: string;

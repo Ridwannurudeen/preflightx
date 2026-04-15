@@ -26,34 +26,34 @@ A reusable TypeScript skill (`@preflightx/skill`) plus a Solidity contract (`Pre
 ## How It Functions
 The verifier composes ten steps in a single call, **short-circuiting on the first failure**:
 
-1. **Route discovery (dual source)** — quote from OnchainOS DEX aggregator + Uniswap AI in parallel
-2. **Cross-source divergence check** — compare output amounts; reject if divergence > 50 bps
-3. **ERC-20 balance check** — `balanceOf(caller)` ≥ amount, via direct X Layer RPC
-4. **ERC-20 allowance check** — `allowance(caller, router)` ≥ amount, via direct X Layer RPC
-5. **Transaction simulation** — OnchainOS Onchain Gateway `simulate-tx` (fail fast on revert)
-6. **Token safety + holder concentration** — OnchainOS Market `token-info`
-7. **Slippage envelope** — quote slippage ≤ caller's `maxSlippageBps`
+1. **Route discovery (dual source)** — OnchainOS v6 `dex/aggregator/swap` + Uniswap AI in parallel
+2. **Cross-source divergence check** — reject if OKX vs. Uniswap output diverge > 50 bps
+3. **ERC-20 balance check** — direct X Layer RPC `balanceOf(caller)` ≥ amount
+4. **ERC-20 allowance check** — direct X Layer RPC `allowance(caller, router)` ≥ amount
+5. **Route simulation** — OKX v6 aggregator simulates internally before returning calldata; we enforce the tx payload is well-formed
+6. **Token safety** — `isHoneyPot` flag + `taxRate` from the swap response
+7. **Slippage envelope** — `(toAmount − minReceive) / toAmount` ≤ caller's `maxSlippageBps`
+7b. **Price deviation vs recent candles** — current unit price within 1000 bps of mean close over last 4×15m bars (OnchainOS `dex/market/candles`)
 8. **Quote freshness** — quote age ≤ `maxStaleQuoteSeconds`
-9. **Portfolio policy** — OnchainOS Wallet `total-value` + `all-token-balances`; trade size vs. portfolio cap
-10. **Gas budget** — OnchainOS Onchain Gateway `gas-price` × simulated `gasUsed`
+9. **Portfolio policy** — trade USD ≤ `maxPortfolioImpactPct` of fromToken balance (derived from on-chain balance × OKX unit price)
+10. **Gas budget** — `gasPrice × gasLimit` from OKX swap response
 
 On pass, the verifier produces a `VerifiedPlan` with a 90-second TTL, a single-use nonce, and an EIP-712 signature from the PreflightX attestation key (`0xd0C14e287fF6E0B0EC6591BC14FE66CB06FAa0AA`).
 
 The on-chain `PreflightGuard` contract validates that signature, rejects expired plans, rejects reused nonces, pulls funds from the caller, approves the router, forwards the call, and emits `PreflightExecuted(caller, router, nonce, fromToken, toToken, fromAmount, minToAmount, amountOut)`. If `amountOut < minToAmount`, the call reverts after the swap — the slippage commitment is enforced on-chain, not just promised off-chain.
 
 ## OnchainOS / Uniswap Integration
-**OnchainOS endpoints used (8 distinct calls per verification):**
-- DEX Aggregator → `/api/v5/dex/aggregator/quote` (route discovery)
-- Onchain Gateway → `/api/v5/dex/aggregator/onchain-gateway/simulate-tx`
-- Onchain Gateway → `/api/v5/dex/aggregator/onchain-gateway/gas-price`
-- Market → `/api/v5/dex/market/token-info` (safety, decimals)
-- Market → `/api/v5/dex/market/price` (USD valuation for portfolio impact)
-- Market → `/api/v5/dex/market/candles` (recent-price deviation check against quote)
-- Wallet → `/api/v5/wallet/asset/total-value`
-- Wallet → `/api/v5/wallet/asset/all-token-balances`
+**OnchainOS v6 endpoints used:**
+- DEX Aggregator → `/api/v6/dex/aggregator/swap` — returns route, calldata, router address, min-receive, gas, token safety metadata (honeypot flag, tax rate, unit price, decimals), all in one call
+- Market → `/api/v6/dex/market/candles` — recent OHLCV candles for price deviation check
 - HMAC SHA-256 signing on every request (OK-ACCESS-KEY/SIGN/TIMESTAMP/PASSPHRASE)
 
-Endpoints match the OnchainOS `llms.txt` catalog as of Apr 14 2026. If OKX migrates paths to `v6` or equivalent, only `src/onchainos.ts` needs updating — the public skill API is unaffected.
+**Direct X Layer RPC reads (via viem):**
+- `balanceOf` on the fromToken to verify caller holds the amount
+- `allowance(caller, router)` to verify the caller has pre-approved the aggregator
+- Chain: X Layer mainnet, chainId 196, RPC `https://rpc.xlayer.tech`
+
+Consolidating onto the v6 `swap` endpoint is deliberate: OKX's aggregator internally runs the routing, simulation, and token-safety lookups and returns the result in a single signed-request payload. That's what makes "one call, ten checks" honest — the pipeline leverages the aggregator's computed state instead of re-fetching it through multiple endpoints.
 
 **Uniswap AI Skills used:**
 - `uniswap-trading` quote API → independent route quote for cross-validation against OnchainOS DEX. When the two engines disagree by more than 50 bps the verifier blocks the trade — catches manipulated quotes a single-source verifier misses.
@@ -62,7 +62,12 @@ Endpoints match the OnchainOS `llms.txt` catalog as of Apr 14 2026. If OKX migra
 - viem `readContract` ERC-20 `balanceOf` + `allowance` via `https://rpc.xlayer.tech` — verifying spendability the OnchainOS API doesn't enforce.
 
 ## Proof of Work
+- **Live web demo:** https://preflight.gudman.xyz — pick a scenario, see a real preflight run live against X Layer mainnet with a signed plan
 - **Agentic Wallet address:** `0xefb90722a4731c01d64adb11e4dd8d76dd73911e` (X Layer, chainId 196)
+- **Example on-chain txs (Agentic Wallet activity):**
+  - Self-send test: `0xce0b6a0c2c0fd11c7b1cb5900ca23f121b5aea469693350c816fab4a78fb651b`
+  - Native OKB → USDC swap via OKX DEX v6: `0x8a3a85bbdb4e992ef7db1740bcc32e8e91dab0c9efb365afa5a5bfe2aa8d1a37`
+  - USDC approval to OKX aggregator: `0x9c586809b70b6cfec39cc3c1f848ee9dc443614f8797f89d6ef6c43fc212df54`
 - **PreflightX attestation signer (public):** `0xd0C14e287fF6E0B0EC6591BC14FE66CB06FAa0AA`
 - **PreflightGuard contract on X Layer mainnet:** `0xccaeeb946a0511e0a1fd4497dd6f4e59294478eb`
   - Explorer: https://www.oklink.com/xlayer/address/0xccaeeb946a0511e0a1fd4497dd6f4e59294478eb

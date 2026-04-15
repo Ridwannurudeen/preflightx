@@ -4,6 +4,8 @@
 
 Built for the [OKX Build X Hackathon](https://web3.okx.com/xlayer/build-x-hackathon) — Skill Arena.
 
+**🚀 Live demo: [preflight.gudman.xyz](https://preflight.gudman.xyz)** — try real scenarios against live X Layer mainnet.
+
 PreflightX is two things, used together:
 
 1. **`@preflightx/skill`** — a TypeScript skill any agent installs. Exposes one function `preflight.check(intent, limits)` that runs ten programmatic checks across OnchainOS, Uniswap AI, and X Layer RPC. On pass it returns a `VerifiedPlan` carrying a real EIP-712 signature.

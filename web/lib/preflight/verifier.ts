@@ -1,8 +1,8 @@
 import { type PublicClient } from "viem";
-import { OnchainosClient, type SwapResult } from "./onchainos.js";
-import { UniswapAIClient, type UniswapRouteResult } from "./uniswap.js";
-import { PlanSigner, planNonce } from "./signer.js";
-import { createChainClient, getErc20Balance, getErc20Allowance } from "./chain.js";
+import { OnchainosClient, type SwapResult } from "./onchainos";
+import { UniswapAIClient, type UniswapRouteResult } from "./uniswap";
+import { PlanSigner, planNonce } from "./signer";
+import { createChainClient, getErc20Balance, getErc20Allowance } from "./chain";
 import {
   IntentSchema,
   RiskLimitsSchema,
@@ -12,7 +12,7 @@ import {
   type VerifiedPlan,
   type VerifyResponse,
   X_LAYER_CHAIN_ID,
-} from "./types.js";
+} from "./types";
 
 const PLAN_TTL_MS = 90_000;
 const CROSS_SOURCE_TOLERANCE_BPS = 50;
@@ -313,4 +313,4 @@ export class Preflight {
   }
 }
 
-export { PlanSigner } from "./signer.js";
+export { PlanSigner } from "./signer";
