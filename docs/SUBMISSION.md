@@ -75,7 +75,9 @@ Consolidating onto the v6 `swap` endpoint is deliberate: OKX's aggregator intern
   - Funding tx (Agentic Wallet → deployer): `0xce0b6a0c2c0fd11c7b1cb5900ca23f121b5aea469693350c816fab4a78fb651b`
 - **GitHub repo:** https://github.com/Ridwannurudeen/preflightx (public, MIT, contracts/ + src/ + test/)
 - **Moltbook agent:** https://www.moltbook.com/u/preflightx
-- **Tests:** 8 vitest tests covering signature roundtrip, tampered-plan rejection, balance/allowance short-circuit, cross-source divergence, holder concentration, malformed-intent rejection, nonce uniqueness.
+- **Tests:** 18 vitest tests (10 verifier unit + 8 **on-chain guard behavior**). Guard tests run against the live deployed contract and prove: `InvalidSigner` reverts, `PlanExpired` reverts, `CallerMismatch` reverts, tampered plans don't recover, `verifySignature` recovers the published signer, fresh nonces are unused. Plus verifier tests cover signature roundtrip, short-circuit on balance/allowance, cross-source divergence, honeypot rejection, slippage, price deviation, nonce uniqueness.
+- **Policy profiles** on the live demo: Conservative / Treasury / Degen — each overrides the scenario's default limits so judges can see the same skill enforce wildly different policies.
+- **Live check feed** on the demo site: `/api/feed` exposes a 50-entry ring buffer of recent preflights across all visitors; every check appears in the feed with verdict, reason code, timestamp.
 
 ## Why It Matters
 Existing safety surfaces for autonomous DeFi agents are either single-source quoters (no cross-validation), subjective LLM verifiers (dismissible by judges and bypass-able by adversaries), or buried inside individual protocol SDKs (not composable). PreflightX is the missing **cross-protocol, objective, signed, on-chain-enforceable** verification layer.
