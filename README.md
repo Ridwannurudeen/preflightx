@@ -1,5 +1,12 @@
 # PreflightX
 
+[![npm](https://img.shields.io/npm/v/preflightx-skill?color=00E08F&label=npm)](https://www.npmjs.com/package/preflightx-skill)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![Tests](https://img.shields.io/badge/tests-19%2F19%20passing-00E08F)](#verification-status)
+[![Chain](https://img.shields.io/badge/X%20Layer-mainnet%20(196)-blue)](https://www.oklink.com/xlayer)
+[![Guard](https://img.shields.io/badge/PreflightGuard-deployed-00E08F)](https://www.oklink.com/xlayer/address/0xe0fa387c81b02e7e877bb5313b3fa62d4e8af5eb)
+[![Demo](https://img.shields.io/badge/demo-asciinema-ff5f56)](https://asciinema.org/a/MlnxQZtRAilxfqgq)
+
 **PreflightX is the safety and execution policy layer for autonomous trading agents on X Layer.**
 
 It stops unsafe swaps before execution, explains the failure in deterministic reason codes, auto-remediates recoverable issues, and returns a signed on-chain-verifiable plan that `PreflightGuard` can enforce.
